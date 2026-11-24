@@ -26,7 +26,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { FontSizeProvider } from './context/FontSizeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { LanguageProvider } from './context/LanguageContext';
-import { ShieldCheck, X, WifiOff, RefreshCw, MessageCircle } from 'lucide-react';
+import { ShieldCheck, X, WifiOff, RefreshCw, MessageCircle, Sparkles } from 'lucide-react';
 import * as api from './services/api';
 import syncService from './services/syncService';
 import { APP_VERSION, APP_CHANGELOG_SUMMARY, APP_SHORT_DATE, APP_RELEASE_TIME } from './constants/version';
@@ -1034,16 +1034,16 @@ function MainApp() {
         data-testid="floating-whatsapp-btn"
         aria-label="Open WhatsApp Expense Assistant"
         title="Open WhatsApp Expense Assistant"
-        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 hover:brightness-110 text-white flex items-center justify-center shadow-xl shadow-emerald-600/35 active:scale-95 transition-all cursor-pointer group ring-4 ring-emerald-500/20"
+        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-[#5B27DC] via-[#6C47FF] to-[#7B42F6] hover:from-[#4E1FC5] hover:to-[#6E32E9] text-white flex items-center justify-center shadow-xl shadow-purple-600/35 active:scale-95 transition-all cursor-pointer group ring-4 ring-purple-500/20"
       >
         <div className="relative">
-          <MessageCircle size={26} strokeWidth={2.3} />
-          <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
+          <Sparkles size={24} strokeWidth={2.2} className="text-white" />
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-[#6C47FF] animate-ping" />
           </span>
         </div>
-        <span className="absolute right-full mr-2.5 px-2.5 py-1 rounded-xl bg-slate-900/90 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-md hidden sm:block">
-          WhatsApp Assistant
+        <span className="absolute right-full mr-2.5 px-3 py-1.5 rounded-xl bg-[#16132A] text-white text-[11px] font-black tracking-wide whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl border border-white/10 hidden sm:block">
+          PocketNook Copilot
         </span>
       </button>
 

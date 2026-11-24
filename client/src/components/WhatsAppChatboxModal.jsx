@@ -1,14 +1,89 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Send, CheckCheck, Mic, Paperclip, Sparkles, 
-  Trash2, ArrowLeft, Bot, ShieldCheck, Undo2,
-  PieChart, Users, Camera, Zap, ChevronDown
+  Trash2, ArrowLeft, ShieldCheck, Undo2, ChevronDown,
+  PieChart, Users, Camera, Zap, ArrowUpRight
 } from 'lucide-react';
 import { processAssistantMessage } from '../services/aiAssistantService';
 import { processReceiptFile } from '../services/receiptScannerService';
 import { useToast } from '../context/ToastContext';
 
 const CHAT_STORAGE_KEY = 'expense_tracker_whatsapp_chat';
+
+/**
+ * Luxury Fintech Message Formatter
+ * Formats bot messages into clean, modern editorial typography without raw asterisks.
+ */
+function formatBotMessage(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+
+  return lines.map((line, lIdx) => {
+    // If divider line like ━━━━━━
+    if (/^[━─—–=-]{5,}$/.test(line.trim())) {
+      return <div key={lIdx} className="my-2.5 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />;
+    }
+
+    // Parse inline bold *text* and `code`
+    const parts = [];
+    let key = 0;
+    const regex = /(\*([^*]+)\*)|(`([^`]+)`)/g;
+    let match;
+    let lastIndex = 0;
+
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={key++}>{line.substring(lastIndex, match.index)}</span>);
+      }
+      if (match[1]) {
+        // *bold*
+        parts.push(
+          <strong key={key++} className="font-semibold text-white tracking-tight">
+            {match[2]}
+          </strong>
+        );
+      } else if (match[3]) {
+        // `code`
+        parts.push(
+          <code key={key++} className="px-1.5 py-0.5 rounded-md bg-white/10 text-emerald-300 font-mono text-[11px] border border-white/5">
+            {match[4]}
+          </code>
+        );
+      }
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < line.length) {
+      parts.push(<span key={key++}>{line.substring(lastIndex)}</span>);
+    }
+
+    const trimmed = line.trim();
+    const isTitle = /^[🚨🧾💡👋📊⚡👥🕒💰🏷️]\s/.test(trimmed);
+    const isVerdict = trimmed.toLowerCase().startsWith('verdict:');
+
+    if (isTitle) {
+      return (
+        <div key={lIdx} className="font-bold text-[13.5px] text-white pt-1 pb-0.5 flex items-center gap-1.5">
+          {parts}
+        </div>
+      );
+    }
+
+    if (isVerdict) {
+      return (
+        <div key={lIdx} className="mt-2 p-2.5 rounded-xl bg-white/[0.04] border border-white/5 text-[12px] leading-relaxed text-slate-200">
+          {parts}
+        </div>
+      );
+    }
+
+    return (
+      <div key={lIdx} className="min-h-[18px] text-[12.5px] text-slate-300 leading-relaxed">
+        {parts.length > 0 ? parts : <span>&nbsp;</span>}
+      </div>
+    );
+  });
+}
 
 export default function WhatsAppChatboxModal({
   isOpen,
@@ -30,18 +105,18 @@ export default function WhatsAppChatboxModal({
       }
     } catch (e) {}
 
-    // Default welcome messages from PocketNook WhatsApp Copilot
+    // Default welcome messages
     return [
       {
         id: 'msg_welcome_1',
         sender: 'bot',
-        text: '👋 *Welcome to PocketNook AI Copilot!*\n\nI am your private, on-device financial assistant. Your banking data is scrubbed with zero leakage before reasoning.',
+        text: '👋 *Welcome to PocketNook Copilot*\n\nYour intelligent, private on-device financial analyst. Your banking records remain completely secure with zero cloud leakage.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       },
       {
         id: 'msg_welcome_2',
         sender: 'bot',
-        text: '💡 *Ask me anything:*\n• `Can I afford a 3000 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS!\n• `Undo` (to delete last expense)\n\n📎 *Tip:* Tap the paperclip icon to scan any bill receipt photo instantly!',
+        text: '💡 *Instant Intelligence:*\n• `Can I afford a 3000 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS!\n• `Undo` (to delete last expense)\n\n📎 *Tip:* Tap the paperclip icon to scan any bill receipt photo instantly!',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -70,7 +145,7 @@ export default function WhatsAppChatboxModal({
     }
   }, [isOpen, messages, isTyping]);
 
-  // Initialize Speech Recognition if supported
+  // Speech Recognition Hook
   useEffect(() => {
     const SpeechRecognition = typeof window !== 'undefined' && 
       (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -80,7 +155,7 @@ export default function WhatsAppChatboxModal({
         const recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
-        recognition.lang = 'en-IN'; // Supports Indian English & Hinglish accent
+        recognition.lang = 'en-IN';
 
         recognition.onresult = (event) => {
           const transcript = event.results[0]?.[0]?.transcript || '';
@@ -154,7 +229,7 @@ export default function WhatsAppChatboxModal({
         `💳 *Mode:* ${result.paymentMethod || 'UPI'}\n` +
         `📅 *Date:* ${result.date}\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `✨ On-device OCR verified with ${result.confidence}% confidence.`;
+        `✨ Verified on-device with ${result.confidence}% accuracy.`;
 
       const botMsg = {
         id: `msg_bot_${Date.now()}`,
@@ -205,7 +280,7 @@ export default function WhatsAppChatboxModal({
     setInputText('');
     setIsTyping(true);
 
-    // Process message through AI Copilot
+    // Process through AI Assistant
     setTimeout(async () => {
       try {
         const result = await processAssistantMessage(raw, {
@@ -258,7 +333,7 @@ export default function WhatsAppChatboxModal({
       {
         id: `msg_fresh_${Date.now()}`,
         sender: 'bot',
-        text: '🧹 *Chat history cleared!*\n\nSend any question like `Can I afford 3000?`, `Chai 20`, or `Summary` to begin.',
+        text: '🧹 *Chat history cleared!*\n\nAsk any question like `Can I afford 3000?`, `Chai 20`, or `Summary` to begin.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ]);
@@ -275,17 +350,18 @@ export default function WhatsAppChatboxModal({
     { id: 'undo-last', label: '↩️ Undo Last', text: 'Undo' }
   ];
 
-  // Live financial snapshot stats
+  // Live financial snapshot calculations
   const remaining = Number(dashboardData?.remaining_budget || 0);
   const today = Number(dashboardData?.today_spent || 0);
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = Math.max(1, daysInMonth - now.getDate());
   const safePace = remaining > 0 ? Math.round(remaining / daysLeft) : 0;
+  const isDeficit = remaining < 0;
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center bg-slate-950/75 sm:p-4 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center bg-black/85 backdrop-blur-xl animate-fade-in"
       data-testid="whatsapp-chatbox-modal"
     >
       {/* Hidden receipt file picker */}
@@ -297,128 +373,124 @@ export default function WhatsAppChatboxModal({
         className="hidden" 
       />
 
-      {/* Premium Fintech Mobile Sheet Container */}
-      <div className="relative w-full sm:max-w-md h-[100dvh] sm:h-[88vh] sm:max-h-[760px] bg-slate-50 dark:bg-[#0c131f] text-slate-900 dark:text-slate-100 rounded-t-[28px] sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col border-t sm:border border-slate-200/80 dark:border-white/10 transition-all">
+      {/* Luxury Fintech Mobile Sheet */}
+      <div className="relative w-full sm:max-w-md h-[100dvh] sm:h-[88vh] sm:max-h-[760px] bg-[#0A0E17] text-slate-100 rounded-t-[32px] sm:rounded-[36px] overflow-hidden shadow-2xl flex flex-col border-t sm:border border-white/10 transition-all">
         
-        {/* Mobile Pull Handle Indicator */}
-        <div className="sm:hidden flex items-center justify-center pt-2.5 pb-1 bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950">
+        {/* Native Pull Handle */}
+        <div className="sm:hidden flex items-center justify-center pt-3 pb-1 bg-[#0A0E17]">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
 
         {/* ========================================================
-            Executive Fintech App Bar (Dark Emerald Obsidian)
+            Executive Navigation Header (Clean, Spacious, Uncluttered)
            ======================================================== */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950 text-white px-3.5 py-3 flex items-center justify-between border-b border-white/10 shadow-lg relative z-20">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="bg-[#0A0E17]/95 px-4 py-3 flex items-center justify-between border-b border-white/[0.08] backdrop-blur-md relative z-20">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Elegant Back/Dismiss Touch Target */}
             <button
               onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 flex items-center justify-center transition-all cursor-pointer text-white flex-shrink-0"
+              className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/10 flex items-center justify-center transition-all cursor-pointer text-white flex-shrink-0"
               aria-label="Back"
             >
               <ArrowLeft size={18} />
             </button>
 
-            {/* Glowing Gem Avatar */}
+            {/* Bespoke Luxury Emblem */}
             <div className="relative flex-shrink-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-500 to-indigo-600 p-[1.5px] shadow-lg shadow-emerald-500/25">
-                <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-base">
-                  🤖
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-indigo-500 p-[1.5px] shadow-lg shadow-emerald-500/20">
+                <div className="w-full h-full rounded-[14px] bg-[#0A0E17] flex items-center justify-center">
+                  <Sparkles size={18} className="text-emerald-400" />
                 </div>
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-slate-900 rounded-full shadow-xs" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#0A0E17] rounded-full shadow-xs" />
             </div>
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="font-extrabold text-sm sm:text-[14.5px] tracking-tight text-white leading-tight truncate">
-                  PocketNook Assistant · AI Copilot
-                </h3>
-                <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+              <h3 className="font-bold text-[15px] tracking-tight text-white leading-tight">
+                PocketNook Assistant
+              </h3>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[9.5px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex-shrink-0">
                   Zero-Leakage AI
                 </span>
-              </div>
-              <p className="text-[11px] text-emerald-300/90 flex items-center gap-1.5 mt-0.5 font-medium leading-none">
-                {isListening ? (
-                  <span className="text-amber-300 font-semibold animate-pulse flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
-                    Listening to voice...
-                  </span>
-                ) : isTyping ? (
-                  <span className="italic animate-pulse">analyzing finances...</span>
-                ) : (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                <span className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium leading-none">
+                  {isListening ? (
+                    <span className="text-amber-300 font-semibold animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
+                      Listening...
+                    </span>
+                  ) : isTyping ? (
+                    <span className="text-emerald-400 italic animate-pulse">analyzing...</span>
+                  ) : (
                     <span>online • auto-expense logger</span>
-                  </>
-                )}
-              </p>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Action Icons */}
+          {/* Clean Action Icons */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               onClick={handleClearChat}
               title="Clear chat"
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.1] active:scale-95 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
             >
-              <Trash2 size={15} />
+              <Trash2 size={14} />
             </button>
             <button
               onClick={onClose}
               title="Close"
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.1] active:scale-95 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
             >
-              <X size={17} />
+              <X size={15} />
             </button>
           </div>
         </div>
 
         {/* ========================================================
-            Live Financial Telemetry HUD (3-Cell Micro-Metrics)
+            Floating Apple Card-Style Telemetry HUD (Micro-Metrics)
            ======================================================== */}
-        <div className="grid grid-cols-3 divide-x divide-slate-200/60 dark:divide-white/10 bg-white/80 dark:bg-[#101826]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-white/10 px-3 py-2 text-center text-xs shadow-xs z-10 select-none">
-          <div className="px-1 flex flex-col justify-center">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-              Remaining
-            </span>
-            <span className="font-extrabold text-xs text-emerald-600 dark:text-emerald-400 tracking-tight">
-              {formatCurrency(remaining)}
-            </span>
-          </div>
-          <div className="px-1 flex flex-col justify-center">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-              Safe Pace
-            </span>
-            <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 tracking-tight">
-              {formatCurrency(safePace)}
-              <span className="text-[9px] font-medium text-slate-400">/d</span>
-            </span>
-          </div>
-          <div className="px-1 flex flex-col justify-center">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-              Today
-            </span>
-            <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 tracking-tight">
-              {formatCurrency(today)}
-            </span>
+        <div className="p-3 bg-[#0A0E17] select-none z-10">
+          <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-2.5 px-3 flex items-center justify-between text-xs backdrop-blur-lg shadow-inner">
+            <div className="flex-1 text-center border-r border-white/10 pr-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
+                Remaining
+              </span>
+              <span className={`font-extrabold text-[13px] tracking-tight ${isDeficit ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {formatCurrency(remaining)}
+              </span>
+            </div>
+            <div className="flex-1 text-center border-r border-white/10 px-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
+                Safe Pace
+              </span>
+              <span className="font-extrabold text-[13px] text-white tracking-tight">
+                {formatCurrency(safePace)}
+                <span className="text-[9.5px] font-medium text-slate-400">/d</span>
+              </span>
+            </div>
+            <div className="flex-1 text-center pl-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
+                Today
+              </span>
+              <span className="font-extrabold text-[13px] text-white tracking-tight">
+                {formatCurrency(today)}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* ========================================================
-            Fintech Conversation Wall / Messages Area
+            Conversation Canvas (Clean, Layered, Tactile Cards)
            ======================================================== */}
         <div 
-          className="flex-1 overflow-y-auto px-3.5 py-4 space-y-3.5 bg-slate-100/70 dark:bg-[#0a0f18] scrollbar-none"
-          style={{
-            backgroundImage: `radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.03) 1px, transparent 1px)`,
-            backgroundSize: '20px 20px'
-          }}
+          className="flex-1 overflow-y-auto px-4 py-2 space-y-4 bg-gradient-to-b from-[#0A0E17] via-[#0D121F] to-[#0A0E17] scrollbar-none"
           data-testid="whatsapp-messages-container"
         >
-          {/* Zero Leakage Privacy Shield Pill */}
-          <div className="mx-auto max-w-xs text-center py-1.5 px-3 rounded-full bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs flex items-center justify-center gap-1.5 select-none">
-            <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
+          {/* Bank-Grade Privacy Pill */}
+          <div className="mx-auto max-w-xs text-center py-1.5 px-3.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10.5px] text-emerald-300 font-semibold shadow-xs flex items-center justify-center gap-1.5 select-none backdrop-blur-md">
+            <ShieldCheck size={14} className="text-emerald-400 flex-shrink-0" />
             <span>🔒 Bank-Grade Zero Leakage: Account &amp; card numbers scrubbed locally before reasoning.</span>
           </div>
 
@@ -431,37 +503,41 @@ export default function WhatsAppChatboxModal({
                 className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}
               >
                 <div
-                  className={`max-w-[86%] sm:max-w-[80%] rounded-[22px] px-4 py-3 shadow-sm relative text-[12.5px] sm:text-[13px] leading-relaxed whitespace-pre-wrap transition-all ${
+                  className={`max-w-[88%] sm:max-w-[82%] rounded-2xl px-4 py-3 shadow-md relative text-[13px] leading-relaxed transition-all ${
                     isUser
-                      ? 'bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-700 text-white rounded-tr-xs shadow-md shadow-emerald-950/20 border border-emerald-400/20'
-                      : 'bg-white dark:bg-[#131c2a] text-slate-800 dark:text-slate-100 rounded-tl-xs border border-slate-200/80 dark:border-white/10 shadow-slate-900/5'
+                      ? 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white font-medium rounded-br-sm shadow-emerald-950/40 border border-emerald-400/30 whitespace-pre-wrap'
+                      : 'bg-white/[0.04] text-slate-100 rounded-bl-sm border border-white/[0.08] shadow-black/40 backdrop-blur-md'
                   }`}
                   data-testid={`whatsapp-bubble-${msg.sender}`}
                 >
-                  <div className="space-y-1">{msg.text}</div>
+                  {/* Clean Formatted Message Stream (No raw asterisks) */}
+                  <div className="space-y-0.5">
+                    {isUser ? msg.text : formatBotMessage(msg.text)}
+                  </div>
 
-                  {/* Contextual Interactive Action Buttons */}
+                  {/* Contextual Interactive Apple-Style Glass Action Buttons */}
                   {msg.actionButtons && msg.actionButtons.length > 0 && (
-                    <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-white/10 flex flex-wrap gap-2">
+                    <div className="mt-3 pt-2.5 border-t border-white/10 flex flex-wrap gap-2">
                       {msg.actionButtons.map((btn, bIdx) => (
                         <button
                           key={bIdx}
                           type="button"
                           onClick={() => handleSendMessage(btn.query)}
-                          className="py-2 px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer flex-1 min-w-[130px]"
+                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 hover:text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer flex-1 min-w-[130px] border border-emerald-500/30 backdrop-blur-md"
                         >
                           <span>{btn.label}</span>
+                          <ArrowUpRight size={13} className="opacity-70" />
                         </button>
                       ))}
                     </div>
                   )}
 
-                  <div className={`flex items-center justify-end gap-1 text-[9.5px] mt-1.5 select-none font-medium ${
-                    isUser ? 'text-emerald-100/80' : 'text-slate-400 dark:text-slate-500'
+                  <div className={`flex items-center justify-end gap-1 text-[9.5px] mt-2 select-none font-medium ${
+                    isUser ? 'text-emerald-100/70' : 'text-slate-400'
                   }`}>
                     <span>{msg.time}</span>
                     {isUser && (
-                      <CheckCheck size={13} className="text-cyan-200 ml-0.5" />
+                      <CheckCheck size={13} className="text-emerald-200 ml-0.5 opacity-80" />
                     )}
                   </div>
                 </div>
@@ -469,13 +545,13 @@ export default function WhatsAppChatboxModal({
             );
           })}
 
-          {/* Typing Indicator */}
+          {/* Tactile Typing Wave */}
           {isTyping && (
             <div className="flex justify-start animate-fade-in">
-              <div className="rounded-[20px] rounded-tl-xs px-4 py-2.5 bg-white dark:bg-[#131c2a] border border-slate-200/80 dark:border-white/10 shadow-xs flex items-center gap-1.5 w-fit">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="rounded-2xl rounded-bl-sm px-4 py-3 bg-white/[0.04] border border-white/[0.08] shadow-sm flex items-center gap-1.5 w-fit">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           )}
@@ -484,12 +560,12 @@ export default function WhatsAppChatboxModal({
         </div>
 
         {/* ========================================================
-            Quick Suggestions Pill Strip
+            Floating Suggestion Carousel (Clean Micro-Pills)
            ======================================================== */}
-        <div className="bg-white/90 dark:bg-[#0c131d]/90 backdrop-blur-md px-3 py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none border-t border-slate-200/70 dark:border-white/10">
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-400 flex items-center gap-1 flex-shrink-0 mr-1 select-none">
-            <Sparkles size={11} className="text-emerald-500" />
-            Ask Copilot:
+        <div className="bg-[#0A0E17]/95 px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none border-t border-white/[0.06] backdrop-blur-md">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 flex-shrink-0 select-none">
+            <Sparkles size={11} className="text-emerald-400" />
+            Suggested:
           </span>
           {QUICK_PROMPTS.map((p) => (
             <button
@@ -497,7 +573,7 @@ export default function WhatsAppChatboxModal({
               type="button"
               onClick={() => handleSendMessage(p.text)}
               data-testid={`whatsapp-quick-prompt-${p.id}`}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#162132] hover:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-white/10 shadow-xs flex-shrink-0 active:scale-95 transition-all cursor-pointer"
+              className="px-3.5 py-1.5 rounded-full bg-white/[0.05] hover:bg-emerald-500/15 active:bg-emerald-500/25 text-xs font-medium text-slate-200 border border-white/10 shadow-xs flex-shrink-0 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
             >
               {p.label}
             </button>
@@ -505,23 +581,23 @@ export default function WhatsAppChatboxModal({
         </div>
 
         {/* ========================================================
-            Integrated Mobile Composer Bar with Voice & OCR Camera
+            Floating Dynamic Island Composer (Luxury Mobile Input)
            ======================================================== */}
-        <div className="bg-white/95 dark:bg-[#0c131d]/95 backdrop-blur-xl p-3 flex items-center gap-2 border-t border-slate-200/80 dark:border-white/10 relative z-20">
-          {/* Attach receipt photo button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Scan Receipt Photo"
-            data-testid="whatsapp-paperclip-btn"
-            className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-[#162132] hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 border border-slate-200/60 dark:border-white/10 flex items-center justify-center transition-all cursor-pointer active:scale-90 flex-shrink-0"
-            aria-label="Attach receipt photo"
-          >
-            <Paperclip size={18} />
-          </button>
+        <div className="bg-[#0A0E17] p-3 pt-1 border-t border-white/[0.06] relative z-20">
+          <div className="bg-white/[0.05] border border-white/10 rounded-full p-1.5 pl-3 flex items-center gap-2 shadow-xl backdrop-blur-2xl focus-within:border-emerald-500/50 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all">
+            {/* 1-Tap Receipt Camera / OCR */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Scan Receipt Photo"
+              data-testid="whatsapp-paperclip-btn"
+              className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.1] text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer active:scale-90 flex-shrink-0"
+              aria-label="Attach receipt photo"
+            >
+              <Paperclip size={17} />
+            </button>
 
-          {/* Text Input Pill Enclosure */}
-          <div className="flex-1 bg-slate-100/90 dark:bg-[#162132]/90 rounded-2xl px-4 py-2.5 border border-slate-200/80 dark:border-white/10 focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all shadow-inner flex items-center">
+            {/* Seamless Fluid Text Field */}
             <input
               ref={inputRef}
               type="text"
@@ -534,38 +610,38 @@ export default function WhatsAppChatboxModal({
                 }
               }}
               data-testid="whatsapp-chat-input"
-              placeholder={isListening ? "Listening... speak now!" : "Ask copilot, type expense, or tap mic..."}
-              className="w-full bg-transparent text-[13px] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
+              placeholder={isListening ? "Listening... speak now!" : "Ask anything or type expense..."}
+              className="flex-1 bg-transparent text-[13.5px] text-white placeholder-slate-400 focus:outline-none"
             />
+
+            {/* Voice Dictation Mic */}
+            <button
+              type="button"
+              onClick={toggleVoiceListening}
+              title={isListening ? "Stop listening" : "Speak your message"}
+              data-testid="whatsapp-voice-mic-btn"
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${
+                isListening
+                  ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/50 ring-2 ring-rose-400 animate-pulse'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white active:scale-90'
+              }`}
+              aria-label="Voice input"
+            >
+              <Mic size={17} className={isListening ? 'animate-bounce' : ''} />
+            </button>
+
+            {/* Radiant Send Pill */}
+            <button
+              type="button"
+              onClick={() => handleSendMessage()}
+              disabled={!inputText.trim() || isTyping}
+              data-testid="whatsapp-chat-send-btn"
+              className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 hover:brightness-110 text-white shadow-lg shadow-emerald-500/30 flex items-center justify-center transition-all cursor-pointer active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none flex-shrink-0"
+              aria-label="Send"
+            >
+              <Send size={15} />
+            </button>
           </div>
-
-          {/* Voice Mic Button */}
-          <button
-            type="button"
-            onClick={toggleVoiceListening}
-            title={isListening ? "Stop listening" : "Speak your message"}
-            data-testid="whatsapp-voice-mic-btn"
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${
-              isListening
-                ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/40 ring-2 ring-rose-400 animate-pulse'
-                : 'bg-slate-100 dark:bg-[#162132] hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-white/10 active:scale-90'
-            }`}
-            aria-label="Voice input"
-          >
-            <Mic size={18} className={isListening ? 'animate-bounce' : ''} />
-          </button>
-
-          {/* Send Button */}
-          <button
-            type="button"
-            onClick={() => handleSendMessage()}
-            disabled={!inputText.trim() || isTyping}
-            data-testid="whatsapp-chat-send-btn"
-            className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-lg shadow-emerald-600/30 flex items-center justify-center transition-all cursor-pointer active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none flex-shrink-0"
-            aria-label="Send"
-          >
-            <Send size={16} />
-          </button>
         </div>
       </div>
     </div>

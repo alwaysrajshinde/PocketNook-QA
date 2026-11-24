@@ -35,10 +35,10 @@ function extractPathAndQuery(locationObj = typeof window !== 'undefined' ? windo
   if (locationObj.hash && locationObj.hash.length > 1) {
     raw = locationObj.hash.slice(1); // remove leading '#'
   } else if (locationObj.pathname) {
-    // 2. Fall back to pathname (e.g. /transactions, /PocketNook/transactions)
+    // 2. Fall back to pathname (e.g. /transactions, /PocketNook/transactions, /PocketNook-QA/)
     let p = locationObj.pathname;
     // Strip GitHub Pages repository base name if present
-    p = p.replace(/^\/(?:expense-tracker|pocketnook)\/?/i, '/');
+    p = p.replace(/^\/(?:expense-tracker|pocketnook(?:-[a-z0-9_-]+)?)(?:\/|$)/i, '/');
     raw = p;
   }
 
@@ -59,8 +59,10 @@ function extractPathAndQuery(locationObj = typeof window !== 'undefined' ? windo
   if (raw.startsWith('#')) raw = raw.slice(1);
   if (raw.startsWith('/')) raw = raw.slice(1);
 
-  // Strip repository prefix if present inside hash (e.g. #/PocketNook or #PocketNook/transactions)
-  raw = raw.replace(/^(?:expense-tracker|pocketnook)\/?/i, '');
+  // Strip repository prefix if present inside hash (e.g. #/PocketNook, #/PocketNook-QA, or #PocketNook/transactions)
+  raw = raw.replace(/^(?:expense-tracker|pocketnook(?:-[a-z0-9_-]+)?)(?:\/|$)/i, '');
+  // Also clean up any accidental leading '-qa/' or '-qa' if previous malformed path was entered
+  raw = raw.replace(/^-qa(?:\/|$)/i, '');
   if (raw.startsWith('/')) raw = raw.slice(1);
 
   let [pathPart, queryPart] = raw.split('?');
@@ -79,7 +81,7 @@ export function parseRoute(locationObj = typeof window !== 'undefined' ? window.
   const { pathPart, searchParams, rawOriginal } = extractPathAndQuery(locationObj);
 
   // Default empty route or repo root -> Overview
-  if (!pathPart || pathPart === 'index.html' || pathPart === '/' || pathPart === 'home' || pathPart === 'overview' || pathPart === 'pocketnook' || pathPart === 'expense-tracker') {
+  if (!pathPart || pathPart === 'index.html' || pathPart === '/' || pathPart === 'home' || pathPart === 'overview' || pathPart === 'pocketnook' || pathPart === 'pocketnook-qa' || pathPart === '-qa' || pathPart === 'expense-tracker') {
     return {
       tab: ROUTE_TABS.HOME,
       section: null,
@@ -220,7 +222,7 @@ export function parseRoute(locationObj = typeof window !== 'undefined' ? window.
     const saved = sessionStorage.getItem(STORAGE_ACTIVE_ROUTE_KEY);
     if (saved && (!pathPart || pathPart === 'index.html')) {
       const parsed = JSON.parse(saved);
-      if (parsed && parsed.tab) {
+      if (parsed && parsed.tab && parsed.tab !== 'not_found') {
         return { ...parsed, isValid: true };
       }
     }
@@ -311,12 +313,13 @@ export function saveIntendedRoute() {
     
     // Normalize path/hash to test if it's just the root or repo slug
     let clean = (hash.length > 1 ? hash.slice(1) : pathname).toLowerCase().trim();
-    clean = clean.replace(/^\/(?:expense-tracker|pocketnook)\/?/i, '/');
-    clean = clean.replace(/^(?:expense-tracker|pocketnook)\/?/i, '');
+    clean = clean.replace(/^\/(?:expense-tracker|pocketnook(?:-[a-z0-9_-]+)?)(?:\/|$)/i, '/');
+    clean = clean.replace(/^(?:expense-tracker|pocketnook(?:-[a-z0-9_-]+)?)(?:\/|$)/i, '');
+    clean = clean.replace(/^-qa(?:\/|$)/i, '');
     clean = clean.replace(/^\/+/, '').replace(/\/+$/, '');
 
     // Only save genuinely deep routes like transactions, reports, settings/budget
-    if (clean && clean !== 'home' && clean !== 'overview' && clean !== 'index.html' && clean !== 'privacy' && clean !== 'terms' && clean !== 'pocketnook' && clean !== 'expense-tracker') {
+    if (clean && clean !== 'home' && clean !== 'overview' && clean !== 'index.html' && clean !== 'privacy' && clean !== 'terms' && clean !== 'pocketnook' && clean !== 'pocketnook-qa' && clean !== '-qa' && clean !== 'expense-tracker') {
       const current = hash || pathname;
       sessionStorage.setItem(STORAGE_INTENDED_ROUTE_KEY, current);
     }

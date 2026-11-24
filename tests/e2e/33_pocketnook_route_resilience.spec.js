@@ -35,7 +35,43 @@ test.describe('Area 33: PocketNook Routing & GitHub Pages Path Resilience', () =
     await expect(page.locator('aside:has-text("PocketNook")').first()).toBeVisible();
   });
 
-  test('33.3: Genuinely invalid route still displays NotFoundRoute', async ({ page, authHelpers }) => {
+  test('33.3: Visiting #/PocketNook-QA/ resolves to Overview without 404', async ({ page, authHelpers }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await authHelpers.loginAsRaj();
+
+    // QA repo subpath simulation
+    await page.goto('/#/PocketNook-QA/');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('[data-testid="not-found-container"]')).not.toBeVisible();
+    await expect(page.locator('text=Page Not Found')).not.toBeVisible();
+    await expect(page.locator('text=MONTHLY BUDGET').first()).toBeVisible();
+  });
+
+  test('33.4: Visiting #/PocketNook-QA/transactions resolves directly to Transactions', async ({ page, authHelpers }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await authHelpers.loginAsRaj();
+
+    await page.goto('/#/PocketNook-QA/transactions');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('[data-testid="not-found-container"]')).not.toBeVisible();
+    await expect(page.locator('aside:has-text("PocketNook")').first()).toBeVisible();
+  });
+
+  test('33.5: Visiting residual #/-QA/ resolves cleanly to Overview without 404', async ({ page, authHelpers }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await authHelpers.loginAsRaj();
+
+    await page.goto('/#/-QA/');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('[data-testid="not-found-container"]')).not.toBeVisible();
+    await expect(page.locator('text=Page Not Found')).not.toBeVisible();
+    await expect(page.locator('text=MONTHLY BUDGET').first()).toBeVisible();
+  });
+
+  test('33.6: Genuinely invalid route still displays NotFoundRoute', async ({ page, authHelpers }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await authHelpers.loginAsRaj();
 

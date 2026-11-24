@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Send, CheckCheck, Mic, Paperclip, MoreVertical, Sparkles, 
   Trash2, ArrowLeft, Bot, RefreshCw, Zap, ShieldCheck, Undo2,
-  PieChart, Users, HelpCircle, AlertCircle, CheckCircle2
+  PieChart, Users, HelpCircle, AlertCircle, CheckCircle2, Camera
 } from 'lucide-react';
 import { processAssistantMessage } from '../services/aiAssistantService';
+import { processReceiptFile } from '../services/receiptScannerService';
 import { useToast } from '../context/ToastContext';
 
 const CHAT_STORAGE_KEY = 'expense_tracker_whatsapp_chat';
@@ -40,7 +41,7 @@ export default function WhatsAppChatboxModal({
       {
         id: 'msg_welcome_2',
         sender: 'bot',
-        text: '💡 *Ask me anything:*\n• `Can I afford a 3000 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS!\n• `Undo` (to delete last expense)',
+        text: '💡 *Ask me anything:*\n• `Can I afford a 3000 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS!\n• `Undo` (to delete last expense)\n\n📎 *Tip:* Tap the paperclip icon to scan any bill receipt photo instantly!',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -51,6 +52,7 @@ export default function WhatsAppChatboxModal({
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const speechRecognitionRef = useRef(null);
 
   useEffect(() => {
@@ -127,6 +129,65 @@ export default function WhatsAppChatboxModal({
     }
   };
 
+  const handleReceiptUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const attachMsg = {
+      id: `msg_att_${Date.now()}`,
+      sender: 'user',
+      text: `📷 [Attached Receipt: ${file.name}]`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setMessages((prev) => [...prev, attachMsg]);
+    setIsTyping(true);
+
+    try {
+      const result = await processReceiptFile(file);
+      const formattedAmount = formatCurrency(result.amount);
+      const replyText =
+        `🧾 *Receipt Scanned Successfully!*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 *Amount:* ${formattedAmount}\n` +
+        `🏷️ *Category:* ${result.category}\n` +
+        `📝 *Vendor:* ${result.vendor}\n` +
+        `💳 *Mode:* ${result.paymentMethod || 'UPI'}\n` +
+        `📅 *Date:* ${result.date}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `✨ On-device OCR verified with ${result.confidence}% confidence.`;
+
+      const botMsg = {
+        id: `msg_bot_${Date.now()}`,
+        sender: 'bot',
+        text: replyText,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        actionButtons: [
+          { 
+            label: `✅ Confirm & Log (${formattedAmount})`, 
+            query: `${result.vendor} ${result.amount} ${result.paymentMethod || 'upi'}` 
+          },
+          { label: '📊 Check Budget', query: 'Summary' }
+        ]
+      };
+
+      setMessages((prev) => [...prev, botMsg]);
+      showToast(`Scanned ${result.vendor} (${formattedAmount})!`, 'success');
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_bot_${Date.now()}`,
+          sender: 'bot',
+          text: `❌ Could not read receipt clearly. Please try typing the amount directly (e.g. \`D-Mart 450\`).`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } finally {
+      setIsTyping(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleSendMessage = async (textToSend) => {
@@ -162,6 +223,7 @@ export default function WhatsAppChatboxModal({
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           type: result.type,
           data: result.data,
+          actionButtons: result.actionButtons || null,
           suggestedChips: result.suggestedChips || null
         };
 
@@ -187,7 +249,7 @@ export default function WhatsAppChatboxModal({
       } finally {
         setIsTyping(false);
       }
-    }, 350);
+    }, 300);
   };
 
   const handleClearChat = () => {
@@ -213,11 +275,28 @@ export default function WhatsAppChatboxModal({
     { id: 'undo-last', label: '↩️ Undo Last', text: 'Undo' }
   ];
 
+  // Live financial snapshot stats
+  const remaining = Number(dashboardData?.remaining_budget || 0);
+  const today = Number(dashboardData?.today_spent || 0);
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = Math.max(1, daysInMonth - now.getDate());
+  const safePace = remaining > 0 ? Math.round(remaining / daysLeft) : 0;
+
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
       data-testid="whatsapp-chatbox-modal"
     >
+      {/* Hidden receipt file picker */}
+      <input 
+        type="file" 
+        accept="image/*" 
+        ref={fileInputRef} 
+        onChange={handleReceiptUpload} 
+        className="hidden" 
+      />
+
       {/* Modal Container with Authentic WhatsApp Phone / Web Style */}
       <div className="relative w-full max-w-lg h-[92vh] max-h-[720px] bg-[#EFEAE2] dark:bg-[#0b141a] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-emerald-900/20 dark:border-white/10 animate-scale-in">
         
@@ -285,6 +364,22 @@ export default function WhatsAppChatboxModal({
         </div>
 
         {/* ========================================================
+            Live Financial Snapshot Ribbon
+           ======================================================== */}
+        <div className="bg-[#E2F7CB] dark:bg-[#1f2c34] px-4 py-2 flex items-center justify-between text-[11px] border-b border-black/5 dark:border-white/5 text-slate-700 dark:text-slate-300 font-medium select-none shadow-inner">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+            <span>Bal: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{formatCurrency(remaining)}</strong></span>
+          </div>
+          <div className="text-slate-600 dark:text-slate-300">
+            Safe Pace: <strong className="text-slate-900 dark:text-white font-bold">{formatCurrency(safePace)}/d</strong>
+          </div>
+          <div>
+            Today: <strong className="text-slate-900 dark:text-white font-bold">{formatCurrency(today)}</strong>
+          </div>
+        </div>
+
+        {/* ========================================================
             WhatsApp Chat Wall / Messages Area
            ======================================================== */}
         <div 
@@ -318,16 +413,19 @@ export default function WhatsAppChatboxModal({
                 >
                   <div>{msg.text}</div>
 
-                  {/* Interactive Action Pill inside Bot Message */}
-                  {msg.data?.perPerson && (
-                    <div className="mt-2.5 pt-2 border-t border-slate-200 dark:border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => handleSendMessage(`Dinner ${Math.round(msg.data.perPerson)} upi`)}
-                        className="w-full py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                      >
-                        <span>➕ Log My Share ({formatCurrency(msg.data.perPerson)})</span>
-                      </button>
+                  {/* Contextual Interactive Action Buttons */}
+                  {msg.actionButtons && msg.actionButtons.length > 0 && (
+                    <div className="mt-2.5 pt-2 border-t border-slate-200 dark:border-white/10 flex flex-wrap gap-1.5">
+                      {msg.actionButtons.map((btn, bIdx) => (
+                        <button
+                          key={bIdx}
+                          type="button"
+                          onClick={() => handleSendMessage(btn.query)}
+                          className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer flex-1 min-w-[120px]"
+                        >
+                          <span>{btn.label}</span>
+                        </button>
+                      ))}
                     </div>
                   )}
 
@@ -379,9 +477,21 @@ export default function WhatsAppChatboxModal({
         </div>
 
         {/* ========================================================
-            WhatsApp Bottom Input Bar with Voice Recognition
+            WhatsApp Bottom Input Bar with Voice & Receipt Camera
            ======================================================== */}
         <div className="bg-[#F0F2F5] dark:bg-[#202c33] p-2.5 flex items-center gap-2">
+          {/* Attach receipt photo button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Scan Receipt Photo"
+            data-testid="whatsapp-paperclip-btn"
+            className="p-2 text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors cursor-pointer rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+            aria-label="Attach receipt photo"
+          >
+            <Paperclip size={18} />
+          </button>
+
           <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-full px-4 py-2 flex items-center gap-2 shadow-xs border border-slate-200/50 dark:border-transparent">
             <input
               ref={inputRef}

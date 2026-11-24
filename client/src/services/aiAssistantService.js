@@ -156,7 +156,11 @@ function handleGreetingResponse(snapshot, formatCurrency) {
   return {
     replyText,
     type: 'greeting',
-    suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', 'Split Bill']
+    suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', 'Split Bill'],
+    actionButtons: [
+      { label: '📊 Check Budget', query: 'Summary' },
+      { label: '⚡ Daily Pace', query: 'Daily Pace' }
+    ]
   };
 }
 
@@ -223,7 +227,11 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
     replyText,
     type: 'split_bill',
     data: { totalBill, peopleCount, perPerson },
-    suggestedChips: [`Log Share ${Math.round(perPerson)}`, 'Summary']
+    suggestedChips: [`Log Share ${Math.round(perPerson)}`, 'Summary'],
+    actionButtons: [
+      { label: `➕ Log My Share (${formatCurrency(perPerson)})`, query: `Dinner ${Math.round(perPerson)} upi` },
+      { label: '📊 Check Budget', query: 'Summary' }
+    ]
   };
 }
 
@@ -278,7 +286,11 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
   return {
     replyText,
     type: 'affordability_analysis',
-    data: { plannedAmount, remaining, newRemaining, newPace }
+    data: { plannedAmount, remaining, newRemaining, newPace },
+    actionButtons: [
+      { label: '⚡ Daily Pace', query: 'Daily Pace' },
+      { label: '📊 Summary', query: 'Summary' }
+    ]
   };
 }
 
@@ -300,7 +312,11 @@ function handlePaceIntent(snapshot, formatCurrency) {
   return {
     replyText,
     type: 'daily_pace',
-    suggestedChips: ['Summary', 'Food Spend', 'Tips']
+    suggestedChips: ['Summary', 'Food Spend', 'Tips'],
+    actionButtons: [
+      { label: '💡 Saving Tips', query: 'Saving Tips' },
+      { label: '📊 Summary', query: 'Summary' }
+    ]
   };
 }
 
@@ -504,7 +520,11 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
     replyText,
     type: 'expense_logged',
     parsed,
-    suggestedChips: ['Undo', 'Summary', 'Daily Pace']
+    suggestedChips: ['Undo', 'Summary', 'Daily Pace'],
+    actionButtons: [
+      { label: '📊 View Balance', query: 'Summary' },
+      { label: '↩️ Undo', query: 'Undo' }
+    ]
   };
 }
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Calendar, BarChart2, Plus, ArrowRight, MoreVertical, Receipt,
   RotateCcw, Tag, FileText, Check, ChevronDown, Eye, EyeOff,
-  CalendarClock, MessageSquare, Camera, Sparkles
+  CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import CustomDropdown from '../components/CustomDropdown';
@@ -340,52 +340,6 @@ export default function Home({
         formatCurrency={formatCurrency}
       />
 
-      {/* ========================================================
-          Smart Automation Strip (SMS Parser, Receipt OCR, WhatsApp Assistant)
-         ======================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-emerald-500/5 dark:bg-white/[0.02] border border-purple-500/15 dark:border-white/10 rounded-2xl p-3">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-[#6C47FF] dark:text-[#A78BFA]" />
-          <span className="text-xs font-bold text-slate-800 dark:text-white">Smart Automations:</span>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={onOpenSmsParser}
-            data-testid="home-open-sms-parser-btn"
-            className="px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <MessageSquare size={13} />
-            <span>SMS / UPI Parser</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenReceiptScanner}
-            data-testid="home-open-receipt-scanner-btn"
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Camera size={13} />
-            <span>Scan Receipt</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenWhatsAppAssistant}
-            data-testid="home-open-whatsapp-assistant-btn"
-            className="px-3 py-1.5 rounded-xl bg-[#008069] text-white hover:bg-[#00705c] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-          >
-            <span>💬 WhatsApp Assistant</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenRecurringModal}
-            data-testid="home-open-recurring-modal-btn"
-            className="px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <CalendarClock size={13} />
-            <span>Recurring Bills</span>
-          </button>
-        </div>
-      </div>
 
       {/* ========================================================
           Feature 4: Upcoming Recurring Bills Banner

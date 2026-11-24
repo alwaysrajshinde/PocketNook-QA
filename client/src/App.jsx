@@ -1034,7 +1034,7 @@ function MainApp() {
         data-testid="floating-whatsapp-btn"
         aria-label="Open WhatsApp Expense Assistant"
         title="Open WhatsApp Expense Assistant"
-        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 active:scale-95 transition-all cursor-pointer group"
+        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 hover:brightness-110 text-white flex items-center justify-center shadow-xl shadow-emerald-600/35 active:scale-95 transition-all cursor-pointer group ring-4 ring-emerald-500/20"
       >
         <div className="relative">
           <MessageCircle size={26} strokeWidth={2.3} />

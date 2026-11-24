@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar, BarChart2, Plus, ArrowRight, Sparkles, Eye, EyeOff,
-  CalendarClock, MessageSquare, Camera
+  CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import SpeedChips from '../components/SpeedChips';
@@ -266,46 +266,6 @@ export default function AndroidHome({
         formatCurrency={formatCurrency}
       />
 
-      {/* ========================================================
-          Smart Automation Strip (Mobile)
-         ======================================================== */}
-      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-        <button
-          type="button"
-          onClick={onOpenWhatsAppAssistant}
-          data-testid="android-open-whatsapp-btn"
-          className="px-3 py-1.5 rounded-xl bg-[#008069] text-white text-xs font-bold flex items-center gap-1.5 flex-shrink-0 shadow-xs active:scale-95 transition-transform"
-        >
-          <span>💬 WhatsApp</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenSmsParser}
-          data-testid="android-open-sms-parser-btn"
-          className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
-        >
-          <MessageSquare size={13} />
-          <span>SMS Parser</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenReceiptScanner}
-          data-testid="android-open-receipt-scanner-btn"
-          className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
-        >
-          <Camera size={13} />
-          <span>Scan Receipt</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenRecurringModal}
-          data-testid="android-open-recurring-modal-btn"
-          className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
-        >
-          <CalendarClock size={13} />
-          <span>Recurring Bills</span>
-        </button>
-      </div>
 
       {/* ========================================================
           Feature 4: Upcoming Recurring Bills Alert (Mobile)

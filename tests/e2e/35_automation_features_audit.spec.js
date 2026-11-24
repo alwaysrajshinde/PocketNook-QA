@@ -146,36 +146,14 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     await expect(modal).toHaveCount(0);
   });
 
-  test('35.4: SMS & UPI 1-Tap Smart Parser Modal & AddExpense Inline Parser (Feature 1)', async ({ page, authHelpers }) => {
+  test('35.4: AddExpense Inline SMS & UPI Parser (Single-Feature Focus)', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await dismissGreetingIfNeeded(page);
 
-    // Click "SMS / UPI Parser" button from Smart Automation strip
-    const smsParserBtn = page.locator('[data-testid="home-open-sms-parser-btn"], [data-testid="android-open-sms-parser-btn"]').first();
-    await expect(smsParserBtn).toBeVisible({ timeout: 10000 });
-    await smsParserBtn.click();
+    // Verify 4-option strip is cleanly removed from home screen to focus on Copilot
+    await expect(page.locator('[data-testid="home-open-sms-parser-btn"], [data-testid="android-open-sms-parser-btn"]')).toHaveCount(0);
 
-    // Verify SMS Parser Modal is open
-    const modal = page.locator('[data-testid="sms-parser-modal"]');
-    await expect(modal).toBeVisible();
-    await expect(modal.locator('text=SMS & UPI 1-Tap Smart Parser')).toBeVisible();
-
-    // Click sample HDFC Zomato notification
-    const sampleBtn = modal.locator('button:has-text("HDFC Zomato ₹450")');
-    await sampleBtn.click();
-
-    // Verify parsed amount and merchant are populated
-    const amtInput = modal.locator('[data-testid="sms-parsed-amount"]');
-    await expect(amtInput).toHaveValue('450');
-    const merchantInput = modal.locator('[data-testid="sms-parsed-merchant"]');
-    await expect(merchantInput).toHaveValue('ZOMATO');
-
-    // Confirm and save expense
-    const saveBtn = modal.locator('[data-testid="sms-confirm-save-btn"]');
-    await saveBtn.click();
-    await expect(modal).toHaveCount(0);
-
-    // Also test inline SMS parser in AddExpenseModal
+    // Test inline SMS parser in AddExpenseModal
     const addExpenseBtn = page.locator('button[aria-label="Quick Add Expense"], button:has-text("Add Expense")').first();
     await addExpenseBtn.click();
     await page.waitForTimeout(400);
@@ -196,45 +174,20 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     await page.locator('button[aria-label="Close modal"]').click();
   });
 
-  test('35.5: Recurring Subscriptions Modal & Upcoming Renewal Alerts (Feature 4)', async ({ page, authHelpers }) => {
+  test('35.5: Clean UI Strip Verification & Upcoming Renewal Alerts (Feature 4)', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await dismissGreetingIfNeeded(page);
 
-    // Open Recurring Subscriptions Modal from Smart Automation strip
-    const recurringBtn = page.locator('[data-testid="home-open-recurring-modal-btn"], [data-testid="android-open-recurring-modal-btn"]').first();
-    await expect(recurringBtn).toBeVisible({ timeout: 10000 });
-    await recurringBtn.click();
-
-    // Verify modal content
-    const modal = page.locator('[data-testid="recurring-subscriptions-modal"]');
-    await expect(modal).toBeVisible();
-    await expect(modal.locator('text=Recurring Subscriptions & Bills')).toBeVisible();
-    await expect(modal.locator('text=Monthly Burn Rate')).toBeVisible();
-
-    // Close modal
-    await modal.locator('button[aria-label="Close Modal"]').click();
-    await expect(modal).toHaveCount(0);
+    // Verify 4-option strip is absent to keep home clean
+    await expect(page.locator('[data-testid="home-open-recurring-modal-btn"], [data-testid="android-open-recurring-modal-btn"]')).toHaveCount(0);
   });
 
-  test('35.6: Smart Receipt Scanner & OCR Modal (Feature 7)', async ({ page, authHelpers }) => {
+  test('35.6: Clean UI Strip Verification (Receipt Scanner on Home removed in favor of Copilot)', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await dismissGreetingIfNeeded(page);
 
-    // Open Receipt Scanner Modal from Smart Automation strip
-    const scannerBtn = page.locator('[data-testid="home-open-receipt-scanner-btn"], [data-testid="android-open-receipt-scanner-btn"]').first();
-    await expect(scannerBtn).toBeVisible({ timeout: 10000 });
-    await scannerBtn.click();
-
-    // Verify modal content
-    const modal = page.locator('[data-testid="receipt-scanner-modal"]');
-    await expect(modal).toBeVisible();
-    await expect(modal.locator('text=Smart Receipt Scanner & OCR')).toBeVisible();
-    await expect(modal.locator('[data-testid="receipt-upload-btn"]')).toBeVisible();
-    await expect(modal.locator('[data-testid="receipt-camera-btn"]')).toBeVisible();
-
-    // Close modal
-    await modal.locator('button[aria-label="Close Modal"]').click();
-    await expect(modal).toHaveCount(0);
+    // Verify 4-option strip receipt scanner is removed from home in favor of Copilot paperclip
+    await expect(page.locator('[data-testid="home-open-receipt-scanner-btn"], [data-testid="android-open-receipt-scanner-btn"]')).toHaveCount(0);
   });
 
   test('35.7: Mobile Viewport Validation (< 768px)', async ({ page, authHelpers }) => {
@@ -247,7 +200,7 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     await expect(chipsStrip).toBeVisible({ timeout: 10000 });
 
     // Verify mobile WhatsApp quick launcher
-    const mobileWhatsapp = page.locator('[data-testid="android-open-whatsapp-btn"]');
+    const mobileWhatsapp = page.locator('[data-testid="floating-whatsapp-btn"]');
     await expect(mobileWhatsapp).toBeVisible();
     await mobileWhatsapp.click();
 

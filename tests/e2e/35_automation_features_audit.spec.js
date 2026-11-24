@@ -9,10 +9,10 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
 
   async function dismissGreetingIfNeeded(page) {
     try {
-      const btn = page.locator('button:has-text("Let\'s Dive In"), button:has-text("Got It")').first();
-      if (await btn.isVisible({ timeout: 1200 })) {
+      const btn = page.locator('button:has-text("Let\'s Dive In"), button:has-text("Got It"), text=TAP ANYWHERE TO CONTINUE, [data-testid="welcome-greeting-overlay"]').first();
+      if (await btn.isVisible({ timeout: 2000 })) {
         await btn.click();
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(500);
       }
     } catch (e) {}
   }

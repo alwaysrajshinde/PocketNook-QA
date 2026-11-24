@@ -491,6 +491,22 @@ router.post('/backup/restore', resolveUser, upload.single('file'), (req, res) =>
 // 8. WHATSAPP CHATBOX & AUTOMATED EXPENSE WEBHOOK
 // ========================================================
 
+function sendWhatsAppResponse(req, res, payload) {
+  const isTwilio = Boolean(req.body.Body || req.headers['x-twilio-signature'] || req.body.AccountSid);
+  if (isTwilio) {
+    const text = String(payload.replyText || payload.error || '');
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+    res.type('text/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`);
+  }
+  return res.json(payload);
+}
+
 // Meta WhatsApp Webhook verification challenge
 router.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -558,18 +574,23 @@ router.post('/webhook/whatsapp', (req, res) => {
     }
 
     // 1. Check for Summary / Balance command
-    if (lower === 'summary' || lower === 'balance' || lower.includes('budget') || lower.includes('how much')) {
+    if (lower === 'summary' || lower === 'balance' || lower.includes('budget') || lower.includes('how much') || lower.includes('kitna bacha')) {
       const monthKey = new Date().toISOString().slice(0, 7);
       const dashboard = db.getDashboardData(monthKey, targetUserId);
+      const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+      const daysLeft = Math.max(1, daysInMonth - new Date().getDate());
+      const safePace = dashboard.remaining_budget > 0 ? Math.round(dashboard.remaining_budget / daysLeft) : 0;
+
       const replyText = `📊 *Monthly Budget Summary*\n━━━━━━━━━━━━━━━━━━━━\n` +
         `💰 *Spent This Month:* ₹${Number(dashboard.total_spent || 0).toLocaleString('en-IN')}\n` +
         `🎯 *Monthly Budget:* ₹${Number(dashboard.budget || 0).toLocaleString('en-IN')}\n` +
         `⚖️ *Remaining Balance:* ₹${Number(dashboard.remaining_budget || 0).toLocaleString('en-IN')}\n` +
         `📅 *Spent Today:* ₹${Number(dashboard.today_spent || 0).toLocaleString('en-IN')}\n` +
+        `⚡ *Safe Daily Pace:* ₹${Number(safePace).toLocaleString('en-IN')}/day (${daysLeft} days left)\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         (dashboard.remaining_budget < 0 ? `⚠️ Exceeded monthly budget!` : `✨ Within safe budget limits.`);
 
-      return res.json({
+      return sendWhatsAppResponse(req, res, {
         success: true,
         type: 'summary',
         replyText,
@@ -577,11 +598,93 @@ router.post('/webhook/whatsapp', (req, res) => {
       });
     }
 
-    // 2. Parse expense using SMS/NLP parser
+    // 2. Check for Bill Splitting (e.g. "split 2400 between 6 people")
+    if (/\b(?:split|divide|hissa|doston me)\b/i.test(lower) && /\d+/.test(lower)) {
+      const numbers = trimmedText.match(/\d+(?:[.,]\d+)?/g) || [];
+      if (numbers.length >= 2) {
+        const nums = numbers.map(n => parseFloat(n.replace(/,/g, '')));
+        const totalBill = Math.max(...nums);
+        const peopleCount = Math.min(...nums);
+        const perPerson = Math.round((totalBill / peopleCount) * 100) / 100;
+
+        const replyText = `👥 *Bill Split Calculation*\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `🧾 *Total Bill:* ₹${totalBill.toLocaleString('en-IN')}\n` +
+          `👤 *People:* ${peopleCount}\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `💵 *Each Person Owes:* *₹${perPerson.toLocaleString('en-IN')}*\n\n` +
+          `💡 Reply \`Dinner ${Math.round(perPerson)} upi\` to log your share!`;
+
+        return sendWhatsAppResponse(req, res, {
+          success: true,
+          type: 'split_bill',
+          replyText,
+          data: { totalBill, peopleCount, perPerson }
+        });
+      }
+    }
+
+    // 3. Check for Affordability ("can I afford 3000?")
+    if (/\b(?:can i afford|should i buy|khareed sakta|le sakta)\b/i.test(lower) && /\d+/.test(lower)) {
+      const matches = trimmedText.match(/\d+(?:[.,]\d+)?/g) || [];
+      const plannedAmount = parseFloat(matches[0].replace(/,/g, ''));
+      const monthKey = new Date().toISOString().slice(0, 7);
+      const dashboard = db.getDashboardData(monthKey, targetUserId);
+      const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+      const daysLeft = Math.max(1, daysInMonth - new Date().getDate());
+      const currentPace = dashboard.remaining_budget > 0 ? Math.round(dashboard.remaining_budget / daysLeft) : 0;
+      const newRemaining = dashboard.remaining_budget - plannedAmount;
+      const newPace = daysLeft > 0 ? Math.round(newRemaining / daysLeft) : 0;
+
+      let advice = '';
+      if (newRemaining < 0) {
+        advice = `🚨 *Verdict:* Budget risk! Spending ₹${plannedAmount.toLocaleString('en-IN')} pushes you ₹${Math.abs(newRemaining).toLocaleString('en-IN')} over budget.`;
+      } else if (newPace < currentPace * 0.45) {
+        advice = `⚠️ *Verdict:* Tight squeeze. You can afford it, but daily spending will shrink to ₹${newPace}/day for the remaining ${daysLeft} days.`;
+      } else {
+        advice = `🎉 *Verdict:* Comfortably affordable! You'll still have ₹${newRemaining.toLocaleString('en-IN')} remaining (₹${newPace}/day).`;
+      }
+
+      const replyText = `💡 *Affordability Diagnosis*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `🏷️ *Purchase:* ₹${plannedAmount.toLocaleString('en-IN')}\n` +
+        `💰 *Current Balance:* ₹${Number(dashboard.remaining_budget).toLocaleString('en-IN')}\n` +
+        `⚡ *Current Daily Pace:* ₹${currentPace}/day\n` +
+        `📉 *Projected Daily Pace:* ₹${newPace}/day\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n${advice}`;
+
+      return sendWhatsAppResponse(req, res, {
+        success: true,
+        type: 'affordability',
+        replyText
+      });
+    }
+
+    // 4. Check for Undo / Delete Last
+    if (/\b(?:undo|delete last|cancel last|pichla hatao)\b/i.test(lower)) {
+      const monthKey = new Date().toISOString().slice(0, 7);
+      const recentTxs = db.getTransactions(monthKey, targetUserId);
+      if (recentTxs && recentTxs.length > 0) {
+        const lastTx = recentTxs[0];
+        db.deleteTransaction(lastTx.id, targetUserId);
+        const updatedDashboard = db.getDashboardData(monthKey, targetUserId);
+
+        const replyText = `↩️ *Transaction Undone & Deleted!*\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `🗑️ *Removed:* ₹${lastTx.amount} for *${lastTx.description}* (${lastTx.category})\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `✨ Restored Remaining Balance: ₹${Number(updatedDashboard.remaining_budget).toLocaleString('en-IN')}`;
+
+        return sendWhatsAppResponse(req, res, {
+          success: true,
+          type: 'undo_success',
+          replyText
+        });
+      }
+    }
+
+    // 5. Parse expense using SMS/NLP parser
     const parsed = smsParser.parseSmsNotification(trimmedText);
     if (!parsed.success || !parsed.amount) {
       const helpReply = `🤔 Could not detect an amount in: "${trimmedText}".\n\nTry sending:\n• "Chai 20"\n• "Lunch 150 card"\n• "Uber 350 upi"\n• Or paste a bank SMS!`;
-      return res.json({
+      return sendWhatsAppResponse(req, res, {
         success: false,
         replyText: helpReply,
         error: parsed.error
@@ -618,7 +721,7 @@ router.post('/webhook/whatsapp', (req, res) => {
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `📊 Updated Monthly Spent: ₹${Number(updatedDashboard.total_spent).toLocaleString('en-IN')}`;
 
-    return res.json({
+    return sendWhatsAppResponse(req, res, {
       success: true,
       type: 'expense_logged',
       replyText,

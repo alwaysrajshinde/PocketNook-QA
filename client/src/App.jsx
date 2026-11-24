@@ -1052,7 +1052,9 @@ function MainApp() {
         isOpen={isWhatsAppChatOpen}
         onClose={() => setIsWhatsAppChatOpen(false)}
         onSaveExpense={handleSaveTransaction}
+        onDeleteExpense={handleDeleteTransaction}
         dashboardData={dashboardData}
+        recentTransactions={dashboardData?.recent_transactions || []}
         formatCurrency={formatCurrency}
         categories={categories}
       />

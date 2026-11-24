@@ -3,7 +3,7 @@ import {
   User, ShieldCheck, Bell, Info, Shield, HelpCircle, Sparkles,
   Key, Database, History, Sun, Droplets, Heart, CheckCircle2,
   DollarSign, RefreshCw, LogOut, CheckSquare, Layers, Type, Sliders,
-  Camera, CalendarClock, Landmark, Lock, Smartphone
+  Camera, CalendarClock, Landmark, Lock, Smartphone, MessageCircle, MessageSquare
 } from 'lucide-react';
 import { APP_VERSION, APP_INKED_VERSION } from '../constants/version';
 
@@ -31,6 +31,8 @@ export function buildMoreSearchIndex(context = {}) {
     openComingSoon = () => {},
     openRecurring = () => {},
     openReceiptScanner = () => {},
+    openWhatsAppAssistant = () => {},
+    openSmsParser = () => {},
     openImport = () => {},
     openImportHistory = () => {},
     openTour = () => {},
@@ -475,22 +477,44 @@ export function buildMoreSearchIndex(context = {}) {
       title: 'Smart Receipt Scanner & OCR',
       subtitle: 'Scan receipts via camera or photo to automatically extract amount, date & vendor on-device',
       parentCategory: 'Smart Tools & Automation',
-      keywords: 'receipt scanner ocr camera photo bill scan machine learning on device privacy coming soon upcoming planned पावती स्कॅनर कॅमेरा',
-      aliases: ['Receipt Scanner', 'Scan Receipt', 'OCR', 'Camera Bill Scanner', 'Bill Scanner', 'Coming Soon', 'Upcoming Features'],
+      keywords: 'receipt scanner ocr camera photo bill scan machine learning on device privacy active पावती स्कॅनर कॅमेरा',
+      aliases: ['Receipt Scanner', 'Scan Receipt', 'OCR', 'Camera Bill Scanner', 'Bill Scanner'],
       icon: Camera,
       color: '#10B981',
-      action: () => {}
+      action: () => openReceiptScanner()
     },
     {
       id: 'feature_recurring_expenses',
       title: 'Recurring Subscriptions & Bills',
       subtitle: 'Track recurring subscriptions, monthly burn rate, and get advance renewal alerts (₹0 Server Cost)',
       parentCategory: 'Budgeting & Planning',
-      keywords: 'recurring expenses subscriptions bills renewal monthly netflix spotify burn rate alerts coming soon upcoming planned सबस्क्रिप्शन मासिक खर्च',
-      aliases: ['Subscriptions', 'Recurring Bills', 'Recurring', 'Burn Rate', 'Bill Alerts', 'Coming Soon', 'Upcoming Features'],
+      keywords: 'recurring expenses subscriptions bills renewal monthly netflix spotify burn rate alerts active सबस्क्रिप्शन मासिक खर्च',
+      aliases: ['Subscriptions', 'Recurring Bills', 'Recurring', 'Burn Rate', 'Bill Alerts'],
       icon: CalendarClock,
       color: '#6C47FF',
-      action: () => {}
+      action: () => openRecurring()
+    },
+    {
+      id: 'feature_whatsapp_assistant',
+      title: 'WhatsApp Chatbox Assistant',
+      subtitle: 'Chat naturally to log expenses (e.g. "Chai 20") and check budget summaries in real time',
+      parentCategory: 'Smart Tools & Automation',
+      keywords: 'whatsapp chat assistant bot conversational nlp chai 20 summary webhook व्हॉट्सॲप असिस्टंट',
+      aliases: ['WhatsApp Assistant', 'WhatsApp Chat', 'Chat Assistant', 'Chat Bot', 'WhatsApp'],
+      icon: MessageCircle,
+      color: '#008069',
+      action: () => openWhatsAppAssistant()
+    },
+    {
+      id: 'feature_sms_parser',
+      title: 'SMS & UPI 1-Tap Smart Parser',
+      subtitle: 'Parse bank debit notifications and UPI alerts instantly on-device with zero cloud leaks',
+      parentCategory: 'Smart Tools & Automation',
+      keywords: 'sms parser upi alert hdfc sbi icici gpay phonepe paytm clipboard parse ऑन-डिव्हाइस एसएमएस',
+      aliases: ['SMS Parser', 'UPI Parser', 'Bank SMS', 'Smart Parser', 'Notification Parser'],
+      icon: MessageSquare,
+      color: '#3B82F6',
+      action: () => openSmsParser()
     },
     {
       id: 'feature_bank_auto_sync',

@@ -1,18 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, BarChart2, Plus, ArrowRight, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { 
+  Calendar, BarChart2, Plus, ArrowRight, Sparkles, Eye, EyeOff,
+  CalendarClock, MessageSquare, Camera
+} from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
+import SpeedChips from '../components/SpeedChips';
+import { 
+  getRecurringSubscriptions, 
+  getUpcomingRenewals, 
+  recordBillPaymentAsExpense 
+} from '../services/recurringExpensesService';
+import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function AndroidHome({
   dashboardData,
   onOpenAddExpense,
+  onQuickAddExpense,
   onViewAllCategories,
   onViewAllTransactions,
   onSetBudget,
   onEditTransaction,
-  formatCurrency
+  formatCurrency,
+  categories = [],
+  onOpenSmsParser,
+  onOpenWhatsAppAssistant,
+  onOpenReceiptScanner,
+  onOpenRecurringModal
 }) {
   const { t } = useLanguage();
+  const { showToast } = useToast();
 
   // Groww-style Show / Hide Financial Amounts on Overview
   const [hideAmounts, setHideAmounts] = useState(() => {
@@ -22,6 +39,28 @@ export default function AndroidHome({
       return false;
     }
   });
+
+  const [upcomingRenewals, setUpcomingRenewals] = useState([]);
+
+  useEffect(() => {
+    try {
+      const subs = getRecurringSubscriptions();
+      const renewals = getUpcomingRenewals(subs, 7);
+      setUpcomingRenewals(renewals || []);
+    } catch (e) {}
+  }, []);
+
+  const handleLogRecurringBill = async (sub) => {
+    try {
+      await recordBillPaymentAsExpense(sub);
+      showToast(`Logged ₹${sub.amount} for ${sub.name}!`, 'success');
+      const subs = getRecurringSubscriptions();
+      setUpcomingRenewals(getUpcomingRenewals(subs, 7));
+      window.dispatchEvent(new Event('expense_tracker_updated'));
+    } catch (e) {
+      showToast('Failed to log recurring bill', 'error');
+    }
+  };
 
   const toggleHideAmounts = () => {
     const next = !hideAmounts;
@@ -217,6 +256,88 @@ export default function AndroidHome({
           </div>
         </div>
       </div>
+
+      {/* ========================================================
+          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
+         ======================================================== */}
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
+      />
+
+      {/* ========================================================
+          Smart Automation Strip (Mobile)
+         ======================================================== */}
+      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
+        <button
+          type="button"
+          onClick={onOpenWhatsAppAssistant}
+          data-testid="android-open-whatsapp-btn"
+          className="px-3 py-1.5 rounded-xl bg-[#008069] text-white text-xs font-bold flex items-center gap-1.5 flex-shrink-0 shadow-xs active:scale-95 transition-transform"
+        >
+          <span>💬 WhatsApp</span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSmsParser}
+          data-testid="android-open-sms-parser-btn"
+          className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
+        >
+          <MessageSquare size={13} />
+          <span>SMS Parser</span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenReceiptScanner}
+          data-testid="android-open-receipt-scanner-btn"
+          className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
+        >
+          <Camera size={13} />
+          <span>Scan Receipt</span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenRecurringModal}
+          data-testid="android-open-recurring-modal-btn"
+          className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-bold flex items-center gap-1 flex-shrink-0 active:scale-95 transition-transform"
+        >
+          <CalendarClock size={13} />
+          <span>Recurring Bills</span>
+        </button>
+      </div>
+
+      {/* ========================================================
+          Feature 4: Upcoming Recurring Bills Alert (Mobile)
+         ======================================================== */}
+      {upcomingRenewals.length > 0 && (
+        <div 
+          data-testid="android-upcoming-bills-banner"
+          className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3 flex items-center justify-between gap-2 text-xs"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+              <CalendarClock size={14} />
+            </div>
+            <div className="min-w-0">
+              <span className="font-bold text-slate-800 dark:text-slate-100 truncate block">
+                {upcomingRenewals[0].name} ({formatCurrency(upcomingRenewals[0].amount)})
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                Due in {upcomingRenewals[0].daysRemaining}d ({upcomingRenewals[0].nextDueDate})
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleLogRecurringBill(upcomingRenewals[0])}
+            data-testid="android-log-recurring-bill-btn"
+            className="px-2.5 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-[11px] shadow-xs flex-shrink-0 cursor-pointer active:scale-95"
+          >
+            Log 1-Tap
+          </button>
+        </div>
+      )}
 
       {/* ========================================================
           3. Top Categories Card (Matching Android UI Reference)

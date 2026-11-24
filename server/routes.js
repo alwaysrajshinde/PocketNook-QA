@@ -4,6 +4,7 @@ const xlsx = require('xlsx');
 const path = require('path');
 const db = require('./db');
 const sheetTemplate = require('./sheetTemplate');
+const smsParser = require('./smsParser');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -482,6 +483,150 @@ router.post('/backup/restore', resolveUser, upload.single('file'), (req, res) =>
     res.json({ success: true, message: 'Database restored successfully', ...result });
   } catch (err) {
     console.error('Restore error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ========================================================
+// 8. WHATSAPP CHATBOX & AUTOMATED EXPENSE WEBHOOK
+// ========================================================
+
+// Meta WhatsApp Webhook verification challenge
+router.get('/webhook/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'pocketnook_secret_token';
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('WhatsApp webhook verified successfully');
+      return res.status(200).send(challenge);
+    }
+    return res.status(403).json({ success: false, error: 'Verification failed' });
+  }
+
+  res.json({
+    success: true,
+    status: 'PocketNook WhatsApp webhook active',
+    supported_formats: ['Meta Cloud API', 'Twilio Webhook', 'Direct Simulation JSON'],
+    verify_token_configured: Boolean(VERIFY_TOKEN)
+  });
+});
+
+// WhatsApp incoming message handler (Meta Cloud API, Twilio, or Direct Simulator)
+router.post('/webhook/whatsapp', (req, res) => {
+  try {
+    let incomingText = '';
+    let fromNumber = '';
+
+    // Case 1: Meta Cloud API webhook format
+    if (req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+      const msgObj = req.body.entry[0].changes[0].value.messages[0];
+      incomingText = msgObj.text?.body || '';
+      fromNumber = msgObj.from || '';
+    } 
+    // Case 2: Twilio WhatsApp webhook format (Body & From)
+    else if (req.body.Body) {
+      incomingText = req.body.Body;
+      fromNumber = req.body.From || '';
+    } 
+    // Case 3: Direct JSON simulator format ({ message: 'Chai 20', from: '...' })
+    else if (req.body.message || req.body.text) {
+      incomingText = req.body.message || req.body.text;
+      fromNumber = req.body.from || '';
+    }
+
+    if (!incomingText || !incomingText.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'No message text found in webhook payload'
+      });
+    }
+
+    const trimmedText = incomingText.trim();
+    const lower = trimmedText.toLowerCase();
+
+    // Determine target user (user header or default user 1)
+    let targetUserId = 1;
+    const userEmail = req.headers['x-user-email'] || req.body.user_email;
+    if (userEmail) {
+      try {
+        const { user } = db.getOrCreateUser(null, userEmail);
+        if (user && user.id) targetUserId = user.id;
+      } catch (e) {}
+    }
+
+    // 1. Check for Summary / Balance command
+    if (lower === 'summary' || lower === 'balance' || lower.includes('budget') || lower.includes('how much')) {
+      const monthKey = new Date().toISOString().slice(0, 7);
+      const dashboard = db.getDashboardData(monthKey, targetUserId);
+      const replyText = `📊 *Monthly Budget Summary*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 *Spent This Month:* ₹${Number(dashboard.total_spent || 0).toLocaleString('en-IN')}\n` +
+        `🎯 *Monthly Budget:* ₹${Number(dashboard.budget || 0).toLocaleString('en-IN')}\n` +
+        `⚖️ *Remaining Balance:* ₹${Number(dashboard.remaining_budget || 0).toLocaleString('en-IN')}\n` +
+        `📅 *Spent Today:* ₹${Number(dashboard.today_spent || 0).toLocaleString('en-IN')}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        (dashboard.remaining_budget < 0 ? `⚠️ Exceeded monthly budget!` : `✨ Within safe budget limits.`);
+
+      return res.json({
+        success: true,
+        type: 'summary',
+        replyText,
+        dashboard
+      });
+    }
+
+    // 2. Parse expense using SMS/NLP parser
+    const parsed = smsParser.parseSmsNotification(trimmedText);
+    if (!parsed.success || !parsed.amount) {
+      const helpReply = `🤔 Could not detect an amount in: "${trimmedText}".\n\nTry sending:\n• "Chai 20"\n• "Lunch 150 card"\n• "Uber 350 upi"\n• Or paste a bank SMS!`;
+      return res.json({
+        success: false,
+        replyText: helpReply,
+        error: parsed.error
+      });
+    }
+
+    // 3. Save to database
+    const newTx = db.addTransaction({
+      amount: parsed.amount,
+      description: parsed.merchant,
+      category: parsed.category,
+      payment_mode: parsed.paymentMode,
+      date: parsed.date,
+      is_refund: parsed.type === 'income' ? 1 : 0
+    }, targetUserId);
+
+    const monthKey = parsed.date.slice(0, 7);
+    const updatedDashboard = db.getDashboardData(monthKey, targetUserId);
+
+    const replyText = parsed.type === 'income'
+      ? `🎉 *Income / Refund Logged!*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `💵 *Amount:* +₹${Number(parsed.amount).toLocaleString('en-IN')}\n` +
+        `📝 *Source:* ${parsed.merchant}\n` +
+        `💳 *Mode:* ${parsed.paymentMode}\n` +
+        `📅 *Date:* ${parsed.date}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 Updated Monthly Spent: ₹${Number(updatedDashboard.total_spent).toLocaleString('en-IN')}`
+      : `✅ *Expense Logged Successfully!*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 *Amount:* ₹${Number(parsed.amount).toLocaleString('en-IN')}\n` +
+        `🏷️ *Category:* ${parsed.category}\n` +
+        `📝 *Merchant:* ${parsed.merchant}\n` +
+        `💳 *Mode:* ${parsed.paymentMode}\n` +
+        `📅 *Date:* ${parsed.date}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📊 Updated Monthly Spent: ₹${Number(updatedDashboard.total_spent).toLocaleString('en-IN')}`;
+
+    return res.json({
+      success: true,
+      type: 'expense_logged',
+      replyText,
+      transaction: newTx,
+      parsed
+    });
+  } catch (err) {
+    console.error('WhatsApp webhook error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

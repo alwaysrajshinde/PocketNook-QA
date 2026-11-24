@@ -56,6 +56,8 @@ export default function Settings({
   onOpenImport,
   onOpenImportHistory,
   onOpenNotifications,
+  onOpenWhatsAppAssistant,
+  onOpenSmsParser,
   hasUnreadNotifs = false,
   settingsSearch: externalSettingsSearch,
   setSettingsSearch: externalSetSettingsSearch
@@ -447,6 +449,8 @@ export default function Settings({
       openComingSoon: handleOpenComingSoon,
       openRecurring: handleOpenRecurring,
       openReceiptScanner: handleOpenReceiptScanner,
+      openWhatsAppAssistant: onOpenWhatsAppAssistant || (() => {}),
+      openSmsParser: onOpenSmsParser || (() => {}),
       openImport: onOpenImport || (() => handleOpenModal('import')),
       openImportHistory: onOpenImportHistory || (() => handleOpenModal('export')),
       openTour: onOpenTour || (() => {}),

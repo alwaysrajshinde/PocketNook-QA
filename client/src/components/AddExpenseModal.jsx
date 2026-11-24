@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { 
   X, Check, Plus, Calendar, DollarSign, Send, Banknote, CreditCard, Landmark, 
-  RotateCcw, Receipt, Search, ChevronDown, ChevronUp, Sparkles
+  RotateCcw, Receipt, Search, ChevronDown, ChevronUp, Sparkles, MessageSquare, Clipboard
 } from 'lucide-react';
 import CategoryIcon from './CategoryIcon';
 import { useLanguage } from '../context/LanguageContext';
+import { parseSmsNotification } from '../services/smsParserService';
 
 export default function AddExpenseModal({
   isOpen,
@@ -30,6 +31,45 @@ export default function AddExpenseModal({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [miniSuccess, setMiniSuccess] = useState(false);
+  const [showSmsPaste, setShowSmsPaste] = useState(false);
+  const [smsPasteText, setSmsPasteText] = useState('');
+  const [smsParsedBadge, setSmsParsedBadge] = useState('');
+
+  const handleApplySmsText = (text) => {
+    if (!text || !text.trim()) return;
+    const res = parseSmsNotification(text);
+    if (res.success) {
+      setAmount(String(res.amount));
+      if (res.merchant) setDescription(res.merchant);
+      if (res.category) {
+        const found = (categories || []).find(c => c.name.toLowerCase() === res.category.toLowerCase());
+        setCategory(found ? found.name : res.category);
+      }
+      if (res.paymentMode) setPaymentMode(res.paymentMode);
+      if (res.date) setDate(res.date);
+      if (res.type === 'income') setIsRefund(true);
+      else setIsRefund(false);
+      setSmsParsedBadge(`Auto-filled: ₹${res.amount} (${res.bankOrApp || 'SMS'})`);
+      setShowSmsPaste(false);
+      setSmsPasteText('');
+      setTimeout(() => setSmsParsedBadge(''), 4000);
+    } else {
+      setError(res.error || 'Could not parse SMS. Please check format.');
+    }
+  };
+
+  const handlePasteClipboardDirect = async () => {
+    try {
+      if (navigator?.clipboard?.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          handleApplySmsText(text);
+          return;
+        }
+      }
+    } catch (e) {}
+    setShowSmsPaste(true);
+  };
 
   // Filter out archived categories
   const activeCategories = useMemo(() => {
@@ -157,6 +197,59 @@ export default function AddExpenseModal({
           {error && (
             <div className="p-2 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-300 text-xs font-semibold">
               {error}
+            </div>
+          )}
+
+          {/* SMS / UPI Fast Paste Bar */}
+          <div className="flex items-center justify-between bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/30 rounded-xl px-2.5 py-1.5">
+            <button
+              type="button"
+              onClick={() => setShowSmsPaste(!showSmsPaste)}
+              data-testid="toggle-sms-paste"
+              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5 hover:underline cursor-pointer"
+            >
+              <MessageSquare size={13} />
+              <span>{showSmsPaste ? 'Hide SMS Parser' : 'Paste Bank SMS / UPI Alert'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePasteClipboardDirect}
+              data-testid="sms-quick-clipboard-btn"
+              className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Clipboard size={10} />
+              <span>Auto-Fill Clipboard</span>
+            </button>
+          </div>
+
+          {showSmsPaste && (
+            <div className="space-y-1.5 p-2 bg-blue-50/40 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/40 animate-fade-in">
+              <textarea
+                rows={2}
+                value={smsPasteText}
+                onChange={(e) => setSmsPasteText(e.target.value)}
+                data-testid="sms-modal-inline-textarea"
+                placeholder="Paste SMS here (e.g. Debited INR 450 to Zomato, or 'Chai 20')..."
+                className="w-full text-xs p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 text-slate-900 dark:text-white resize-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleApplySmsText(smsPasteText)}
+                data-testid="sms-modal-inline-parse-btn"
+                className="w-full py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                Parse &amp; Auto-Fill Form
+              </button>
+            </div>
+          )}
+
+          {smsParsedBadge && (
+            <div 
+              data-testid="sms-parsed-badge"
+              className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-600 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1.5 animate-fade-in"
+            >
+              <Check size={12} strokeWidth={3} />
+              <span>{smsParsedBadge}</span>
             </div>
           )}
 

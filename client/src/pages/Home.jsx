@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar, BarChart2, Plus, ArrowRight, MoreVertical, Receipt,
-  RotateCcw, Tag, FileText, Check, ChevronDown, Eye, EyeOff
+  RotateCcw, Tag, FileText, Check, ChevronDown, Eye, EyeOff,
+  CalendarClock, MessageSquare, Camera, Sparkles
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import CustomDropdown from '../components/CustomDropdown';
+import SpeedChips from '../components/SpeedChips';
+import { 
+  getRecurringSubscriptions, 
+  getUpcomingRenewals, 
+  recordBillPaymentAsExpense 
+} from '../services/recurringExpensesService';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -20,7 +27,11 @@ export default function Home({
   onViewAllTransactions,
   onSetBudget,
   formatCurrency,
-  onSelectMonth
+  onSelectMonth,
+  onOpenSmsParser,
+  onOpenWhatsAppAssistant,
+  onOpenReceiptScanner,
+  onOpenRecurringModal
 }) {
   const { showToast } = useToast();
   const { t } = useLanguage();
@@ -69,6 +80,31 @@ export default function Home({
   const maskAmount = (val) => {
     if (hideAmounts) return '₹ ••••••';
     return formatCurrency(val);
+  };
+
+  // Feature 4: Recurring Subscriptions Foregound Check
+  const [upcomingRenewals, setUpcomingRenewals] = useState([]);
+
+  useEffect(() => {
+    try {
+      const subs = getRecurringSubscriptions();
+      const renewals = getUpcomingRenewals(subs, 7);
+      setUpcomingRenewals(renewals || []);
+    } catch (e) {}
+  }, []);
+
+  const handleLogRecurringBill = async (sub) => {
+    try {
+      await recordBillPaymentAsExpense(sub);
+      showToast(`Logged ₹${sub.amount} for ${sub.name}!`, 'success');
+      const subs = getRecurringSubscriptions();
+      setUpcomingRenewals(getUpcomingRenewals(subs, 7));
+      if (onQuickAddExpense) {
+        window.dispatchEvent(new Event('expense_tracker_updated'));
+      }
+    } catch (e) {
+      showToast('Failed to log recurring bill', 'error');
+    }
   };
 
   if (!dashboardData) {
@@ -294,6 +330,94 @@ export default function Home({
           </div>
         </div>
       </div>
+
+      {/* ========================================================
+          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
+         ======================================================== */}
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
+      />
+
+      {/* ========================================================
+          Smart Automation Strip (SMS Parser, Receipt OCR, WhatsApp Assistant)
+         ======================================================== */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-emerald-500/5 dark:bg-white/[0.02] border border-purple-500/15 dark:border-white/10 rounded-2xl p-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-[#6C47FF] dark:text-[#A78BFA]" />
+          <span className="text-xs font-bold text-slate-800 dark:text-white">Smart Automations:</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={onOpenSmsParser}
+            data-testid="home-open-sms-parser-btn"
+            className="px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <MessageSquare size={13} />
+            <span>SMS / UPI Parser</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenReceiptScanner}
+            data-testid="home-open-receipt-scanner-btn"
+            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Camera size={13} />
+            <span>Scan Receipt</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenWhatsAppAssistant}
+            data-testid="home-open-whatsapp-assistant-btn"
+            className="px-3 py-1.5 rounded-xl bg-[#008069] text-white hover:bg-[#00705c] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+          >
+            <span>💬 WhatsApp Assistant</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenRecurringModal}
+            data-testid="home-open-recurring-modal-btn"
+            className="px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <CalendarClock size={13} />
+            <span>Recurring Bills</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================
+          Feature 4: Upcoming Recurring Bills Banner
+         ======================================================== */}
+      {upcomingRenewals.length > 0 && (
+        <div 
+          data-testid="upcoming-bills-banner"
+          className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3 flex flex-wrap items-center justify-between gap-3 text-xs"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+              <CalendarClock size={16} />
+            </div>
+            <div>
+              <span className="font-bold text-slate-800 dark:text-slate-100">
+                Upcoming Bill Renewal: {upcomingRenewals[0].name} ({formatCurrency(upcomingRenewals[0].amount)})
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Due in {upcomingRenewals[0].daysRemaining} {upcomingRenewals[0].daysRemaining === 1 ? 'day' : 'days'} ({upcomingRenewals[0].nextDueDate})
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleLogRecurringBill(upcomingRenewals[0])}
+            data-testid="log-recurring-bill-1tap-btn"
+            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs cursor-pointer transition-colors"
+          >
+            Log Now (1-Tap)
+          </button>
+        </div>
+      )}
 
       {/* ========================================================
           ROW 2: Top Categories + Spending by Category + Monthly Trend

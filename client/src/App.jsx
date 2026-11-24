@@ -14,6 +14,10 @@ import OnboardingTourModal from './components/OnboardingTourModal';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
 import IntelligentImportModal from './components/import/IntelligentImportModal';
 import ImportHistoryModal from './components/import/ImportHistoryModal';
+import WhatsAppChatboxModal from './components/WhatsAppChatboxModal';
+import SmsParserModal from './components/SmsParserModal';
+import ReceiptScannerModal from './components/ReceiptScannerModal';
+import RecurringSubscriptionsModal from './components/RecurringSubscriptionsModal';
 import WelcomeGreetingOverlay from './components/WelcomeGreetingOverlay';
 import SyncProgressIndicator from './components/SyncProgressIndicator';
 import AuthGate from './components/AuthGate';
@@ -22,7 +26,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { FontSizeProvider } from './context/FontSizeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { LanguageProvider } from './context/LanguageContext';
-import { ShieldCheck, X, WifiOff, RefreshCw } from 'lucide-react';
+import { ShieldCheck, X, WifiOff, RefreshCw, MessageCircle } from 'lucide-react';
 import * as api from './services/api';
 import syncService from './services/syncService';
 import { APP_VERSION, APP_CHANGELOG_SUMMARY, APP_SHORT_DATE, APP_RELEASE_TIME } from './constants/version';
@@ -90,6 +94,12 @@ function MainApp() {
   });
   const [isOnboardingTourOpen, setIsOnboardingTourOpen] = useState(false);
   const [isReleaseNotesOpen, setIsReleaseNotesOpen] = useState(false);
+
+  // Smart Automations & Automation Modals
+  const [isWhatsAppChatOpen, setIsWhatsAppChatOpen] = useState(false);
+  const [isSmsParserOpen, setIsSmsParserOpen] = useState(false);
+  const [isReceiptScannerOpen, setIsReceiptScannerOpen] = useState(false);
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
 
   // Notify user whenever a new version / push is deployed (ONCE per version release, never on every refresh)
   useEffect(() => {
@@ -577,6 +587,10 @@ function MainApp() {
                   }}
                   formatCurrency={formatCurrency}
                   onSelectMonth={setSelectedMonth}
+                  onOpenSmsParser={() => setIsSmsParserOpen(true)}
+                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                  onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
+                  onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
                 />
               )}
 
@@ -617,6 +631,8 @@ function MainApp() {
                   onLogout={handleLogout}
                   onOpenTour={() => setIsOnboardingTourOpen(true)}
                   onOpenReleaseNotes={openReleaseNotesModal}
+                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                  onOpenSmsParser={() => setIsSmsParserOpen(true)}
                   onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
                   settingsSearch={settingsSearch}
                   setSettingsSearch={setSettingsSearch}
@@ -765,6 +781,7 @@ function MainApp() {
               <AndroidHome
                 dashboardData={dashboardData}
                 onOpenAddExpense={() => openAddModal(null)}
+                onQuickAddExpense={handleSaveTransaction}
                 onEditTransaction={(tx) => openAddModal(tx)}
                 onViewAllCategories={() => {
                   handleNavigate({ tab: 'settings', section: 'categories' });
@@ -774,6 +791,11 @@ function MainApp() {
                   handleNavigate({ tab: 'settings', section: 'budget' });
                 }}
                 formatCurrency={formatCurrency}
+                categories={categories}
+                onOpenSmsParser={() => setIsSmsParserOpen(true)}
+                onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
+                onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
               />
             )}
 
@@ -820,6 +842,8 @@ function MainApp() {
                   onLogout={handleLogout}
                   onOpenTour={() => setIsOnboardingTourOpen(true)}
                   onOpenReleaseNotes={openReleaseNotesModal}
+                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                  onOpenSmsParser={() => setIsSmsParserOpen(true)}
                   onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
                   settingsSearch={settingsSearch}
                   setSettingsSearch={setSettingsSearch}
@@ -1002,6 +1026,63 @@ function MainApp() {
           }}
         />
       )}
+
+      {/* Feature 5: Floating WhatsApp Expense Assistant Button */}
+      <button
+        type="button"
+        onClick={() => setIsWhatsAppChatOpen(true)}
+        data-testid="floating-whatsapp-btn"
+        aria-label="Open WhatsApp Expense Assistant"
+        title="Open WhatsApp Expense Assistant"
+        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 active:scale-95 transition-all cursor-pointer group"
+      >
+        <div className="relative">
+          <MessageCircle size={26} strokeWidth={2.3} />
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
+          </span>
+        </div>
+        <span className="absolute right-full mr-2.5 px-2.5 py-1 rounded-xl bg-slate-900/90 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-md hidden sm:block">
+          WhatsApp Assistant
+        </span>
+      </button>
+
+      {/* Feature 5: WhatsApp Chatbox Assistant Modal */}
+      <WhatsAppChatboxModal
+        isOpen={isWhatsAppChatOpen}
+        onClose={() => setIsWhatsAppChatOpen(false)}
+        onSaveExpense={handleSaveTransaction}
+        dashboardData={dashboardData}
+        formatCurrency={formatCurrency}
+        categories={categories}
+      />
+
+      {/* Feature 1: SMS & UPI Smart Parser Modal */}
+      <SmsParserModal
+        isOpen={isSmsParserOpen}
+        onClose={() => setIsSmsParserOpen(false)}
+        onSaveExpense={handleSaveTransaction}
+        formatCurrency={formatCurrency}
+        categories={categories}
+      />
+
+      {/* Feature 7: Smart Receipt Scanner & OCR Modal */}
+      <ReceiptScannerModal
+        isOpen={isReceiptScannerOpen}
+        onClose={() => setIsReceiptScannerOpen(false)}
+        formatCurrency={formatCurrency}
+        categories={categories}
+        onRefreshAll={handleRefreshAll}
+      />
+
+      {/* Feature 4: Recurring Subscriptions & Bills Modal */}
+      <RecurringSubscriptionsModal
+        isOpen={isRecurringModalOpen}
+        onClose={() => setIsRecurringModalOpen(false)}
+        formatCurrency={formatCurrency}
+        categories={categories}
+        onRefreshAll={handleRefreshAll}
+      />
     </div>
   );
 }

@@ -109,7 +109,7 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     await expect(page.locator('text=Logged ⚡ Metro')).toBeVisible({ timeout: 5000 });
   });
 
-  test('35.3: WhatsApp Chatbox Assistant In-App Modal (Feature 5)', async ({ page, authHelpers }) => {
+  test('35.3: WhatsApp Chatbox Assistant In-App Modal (Feature 5)', async ({ page, authHelpers }, testInfo) => {
     await authHelpers.loginAsRaj();
     await dismissGreetingIfNeeded(page);
 
@@ -121,25 +121,32 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     // Verify WhatsApp modal is open
     const modal = page.locator('[data-testid="whatsapp-chatbox-modal"]');
     await expect(modal).toBeVisible();
-    await expect(modal.locator('text=PocketNook Assistant')).toBeVisible();
-    await expect(modal.locator('text=online • auto-expense logger')).toBeVisible();
+    await expect(modal.locator('h3:has-text("PocketNook Chat")')).toBeVisible();
+    await expect(modal.locator('text=ready • smart expense logger')).toBeVisible();
 
     // Type a natural language expense in chat
+    const expensePrompt = testInfo.project.name.includes('mobile') ? 'Tea 120 upi' : 'Coffee 120 upi';
     const chatInput = page.locator('[data-testid="whatsapp-chat-input"]');
-    await chatInput.fill('Coffee 120 upi');
+    await chatInput.fill(expensePrompt);
     await page.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     // Verify user bubble appears
-    await expect(modal.locator('text=Coffee 120 upi')).toBeVisible();
+    await expect(modal.locator(`text=${expensePrompt}`).first()).toBeVisible();
+
+    // If running back-to-back within 2-min duplicate window, confirm Log Anyway
+    const dupBtn = modal.locator('button:has-text("Log Anyway")').first();
+    if (await dupBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+      await dupBtn.click();
+    }
 
     // Verify bot response bubble confirms expense
-    await expect(modal.locator('text=Expense Logged Successfully')).toBeVisible({ timeout: 6000 });
-    await expect(modal.locator('text=₹120')).toBeVisible();
+    await expect(modal.locator('text=Expense Logged Successfully').first()).toBeVisible({ timeout: 6000 });
+    await expect(modal.locator('text=₹120').first()).toBeVisible();
 
-    // Test quick prompt: "📊 Summary"
-    const summaryPrompt = page.locator('[data-testid="whatsapp-quick-prompt-summary"]');
+    // Test quick prompt: "Summary"
+    const summaryPrompt = page.locator('[data-testid="whatsapp-quick-prompt-summary"]').first();
     await summaryPrompt.click();
-    await expect(modal.locator('text=Monthly Budget Summary')).toBeVisible({ timeout: 6000 });
+    await expect(modal.locator('text=Monthly Budget Summary').first()).toBeVisible({ timeout: 6000 });
 
     // Close modal
     await modal.locator('button[aria-label="Back"], button[title="Close"]').first().click();

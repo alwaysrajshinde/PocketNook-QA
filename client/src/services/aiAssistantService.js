@@ -1,27 +1,135 @@
 /**
  * aiAssistantService.js
- * PocketNook Autonomous AI Financial Copilot Engine
- * 
- * 100% Zero-Leakage & Privacy-First:
- * - Operates directly on-device using sanitized financial vectors.
- * - Powered by deterministic NLP, financial pace algorithms, and heuristic reasoning.
- * - Hybrid Cloud AI Proxy: Seamlessly enhances responses via secure backend LLM proxy when available.
- * - Fully bilingual: understands English, Hindi keywords, and natural conversational Hinglish.
+ * PocketNook Privacy-First Financial Chat Engine
+ *
+ * - Masks sensitive numbers locally before processing
+ * - Deterministic NLP, parser confidence scoring, duplicate detection, and budget logic
+ * - Optional sanitized cloud enhancement via backend proxy when configured
+ * - Bilingual: understands English, Hindi keywords, and Hinglish
  */
 
-import { parseSmsNotification, CATEGORY_KEYWORDS } from './smsParserService.js';
-import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from './piiSanitizerService.js';
+import { parseSmsNotification, parseIndianAmount, CATEGORY_KEYWORDS } from './smsParserService.js';
+import { sanitizeFinancialText, prepareSafeFinancialSnapshot, MAX_SANITIZE_INPUT_CHARS } from './piiSanitizerService.js';
+import { getUpcomingRenewals } from './recurringExpensesService.js';
+import { inferDefaultPaymentMode } from './chatStorageService.js';
 import { askCopilotAI } from './api.js';
 
+const FINANCIAL_DISCLAIMER = '\n\n_Informational estimate only — not regulated financial advice._';
+
 /**
- * Main query dispatcher for the PocketNook Copilot
- * 
- * @param {string} rawInput - The user's input message
- * @param {Object} context - Financial state & helper handlers
- * @returns {Promise<Object>} Formatted response object with reply text, actions, and metadata
+ * Reads upcoming recurring bill total safely without seeding defaults if user hasn't set up recurring bills
+ */
+function getActiveUpcomingBillsTotal(daysRemaining) {
+  try {
+    if (typeof localStorage === 'undefined') return 0;
+    const raw = localStorage.getItem('expense_tracker_recurring_subs');
+    if (!raw) return 0;
+    const subs = JSON.parse(raw);
+    if (!Array.isArray(subs) || subs.length === 0) return 0;
+    const upcoming = getUpcomingRenewals(subs, Math.max(1, daysRemaining));
+    return upcoming.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  } catch (e) {
+    return 0;
+  }
+}
+
+const DUPLICATE_WINDOW_MS = 2 * 60 * 1000; // 2-minute active paste/double-submit protection window
+
+function parseUtcTimestamp(ts) {
+  if (!ts) return null;
+  const s = String(ts).trim();
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+    ? `${s.replace(' ', 'T')}Z`
+    : s;
+  const ms = Date.parse(normalized);
+  return isNaN(ms) ? null : ms;
+}
+
+/**
+ * Checks whether a candidate transaction duplicates a recent ledger entry within a 2-minute window
+ */
+export function findDuplicateTransaction(candidate, recentTransactions = []) {
+  if (!candidate || !candidate.amount || !Array.isArray(recentTransactions)) return null;
+  const candAmt = Number(candidate.amount);
+  const candMerchant = (candidate.merchant || '').toLowerCase().trim();
+  const candDate = candidate.date || new Date().toISOString().slice(0, 10);
+  const nowMs = Date.now();
+
+  return recentTransactions.find(tx => {
+    const txAmt = Number(tx.amount || 0);
+    const txMerchant = (tx.description || tx.merchant || '').toLowerCase().trim();
+    const txDate = (tx.date || '').slice(0, 10);
+    const sameAmount = Math.abs(txAmt - candAmt) < 0.01;
+    const similarMerchant = candMerchant && txMerchant &&
+      (txMerchant === candMerchant || txMerchant.includes(candMerchant) || candMerchant.includes(txMerchant));
+    if (!sameAmount || !similarMerchant || (txDate && txDate !== candDate)) return false;
+
+    const txTimeMs = parseUtcTimestamp(tx.created_at || tx.createdAt || tx.updated_at);
+    if (txTimeMs !== null) {
+      return Math.abs(nowMs - txTimeMs) <= DUPLICATE_WINDOW_MS;
+    }
+    return false;
+  }) || null;
+}
+
+/**
+ * Computes proactive financial nudges (high category usage, recurring pattern detection)
+ */
+export function computeProactiveNudges(snapshot, recentTransactions = []) {
+  const nudges = [];
+  if (snapshot.budget > 0 && snapshot.percentSpent >= 80 && snapshot.percentSpent < 100) {
+    nudges.push({
+      id: 'nudge_budget_80',
+      level: 'warning',
+      text: `You've used ${snapshot.percentSpent}% of your monthly budget.`,
+      query: 'Daily Pace'
+    });
+  }
+
+  for (const cat of snapshot.categoryBreakdown || []) {
+    if (cat.percent >= 50 && snapshot.totalSpent > 0) {
+      nudges.push({
+        id: `nudge_cat_${cat.category}`,
+        level: 'info',
+        text: `${cat.category} accounts for ${cat.percent}% of your spends.`,
+        query: `${cat.category} spend`
+      });
+      break;
+    }
+  }
+
+  // Detect potential recurring charge (same merchant + amount appearing >= 2 times)
+  const seenMap = new Map();
+  for (const tx of recentTransactions || []) {
+    const m = (tx.description || tx.merchant || '').trim();
+    const a = Number(tx.amount || 0);
+    if (!m || a <= 0) continue;
+    const key = `${m.toLowerCase()}::${a}`;
+    seenMap.set(key, (seenMap.get(key) || 0) + 1);
+    if (seenMap.get(key) === 2) {
+      nudges.push({
+        id: `nudge_rec_${m}`,
+        level: 'tip',
+        text: `Noticed "${m}" (₹${a.toLocaleString('en-IN')}) twice recently. Track it as a recurring bill?`,
+        query: 'Saving Tips'
+      });
+      break;
+    }
+  }
+
+  return nudges.slice(0, 2);
+}
+
+/**
+ * Main query dispatcher for PocketNook Chat
+ *
+ * @param {string} rawInput
+ * @param {Object} context
+ * @returns {Promise<Object>}
  */
 export async function processAssistantMessage(rawInput = '', context = {}) {
-  const { sanitizedText } = sanitizeFinancialText(rawInput.trim());
+  const trimmedRaw = (rawInput || '').trim();
+  const { sanitizedText, wasTruncated } = sanitizeFinancialText(trimmedRaw);
   const text = sanitizedText;
   const lower = text.toLowerCase().trim();
 
@@ -30,109 +138,170 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     recentTransactions = [],
     formatCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`,
     onSaveExpense = null,
-    onDeleteExpense = null
+    onDeleteExpense = null,
+    learnedCategories = {},
+    customCategories = [],
+    budgetRatios = { needs: 50, wants: 30, savings: 20 },
+    onUpdateBudgetRatios = null,
+    forceLog = false,
+    targetTxId = null,
+    lastLoggedBatch = null
   } = context;
 
-  const snapshot = prepareSafeFinancialSnapshot({ dashboardData, recentTransactions });
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysRemaining = Math.max(1, daysInMonth - now.getDate() + 1);
+  const upcomingRecurringTotal = Number(context.upcomingRecurringTotal ?? getActiveUpcomingBillsTotal(daysRemaining));
 
-  // 1. GREETING & COPILOT IDENTITY
+  const snapshot = prepareSafeFinancialSnapshot({
+    dashboardData,
+    recentTransactions,
+    upcomingRecurringTotal,
+    committedSavings: Number(dashboardData?.committed_savings || 0)
+  });
+
+  const defaultPaymentMode = inferDefaultPaymentMode(recentTransactions);
+  const parserOptions = { learnedCategories, customCategories, defaultPaymentMode };
+
+  const truncationNotice = wasTruncated
+    ? `_Note: Input was capped at ${MAX_SANITIZE_INPUT_CHARS.toLocaleString('en-IN')} characters for responsiveness._\n\n`
+    : '';
+
+  const wrapResult = (res) => ({
+    ...res,
+    replyText: truncationNotice ? `${truncationNotice}${res.replyText}` : res.replyText,
+    sanitizedInput: text
+  });
+
+  // 0. BUDGET RATIO UPDATE ACTION
+  const ratioChangeMatch = lower.match(/^apply\s+(\d{2})\/(\d{2})\/(\d{2})/i);
+  if (ratioChangeMatch) {
+    const needs = parseInt(ratioChangeMatch[1], 10);
+    const wants = parseInt(ratioChangeMatch[2], 10);
+    const savings = parseInt(ratioChangeMatch[3], 10);
+    if (needs + wants + savings === 100) {
+      if (typeof onUpdateBudgetRatios === 'function') {
+        await onUpdateBudgetRatios({ needs, wants, savings });
+      }
+      return wrapResult(handle503020Rule(snapshot, formatCurrency, { needs, wants, savings }));
+    }
+  }
+
+  // 1. GREETING & ASSISTANT IDENTITY
   if (isGreetingOrIdentity(lower)) {
-    return handleGreetingResponse(snapshot, formatCurrency);
+    return wrapResult(handleGreetingResponse(snapshot, formatCurrency));
   }
 
   // 2. UNDO / DELETE LAST EXPENSE
   if (isUndoIntent(lower)) {
-    return handleUndoIntent(snapshot, formatCurrency, onDeleteExpense);
+    return wrapResult(await handleUndoIntent(snapshot, formatCurrency, onDeleteExpense, { targetTxId, lastLoggedBatch }));
   }
 
-  // 3. BILL SPLITTING CALCULATOR
+  // 3. TODAY'S TOTAL QUICK INQUIRY
+  if (isTodaysTotalIntent(lower)) {
+    return wrapResult(handleTodaysTotal(snapshot, formatCurrency));
+  }
+
+  // 4. BILL SPLITTING CALCULATOR
   if (isBillSplitIntent(lower)) {
-    return handleBillSplitIntent(text, lower, formatCurrency);
+    return wrapResult(handleBillSplitIntent(text, lower, formatCurrency, defaultPaymentMode));
   }
 
-  // 4. AFFORDABILITY ANALYSIS ("Can I afford X?")
+  // 5. AFFORDABILITY ANALYSIS ("Can I afford X?")
   if (isAffordabilityIntent(lower)) {
-    return handleAffordabilityIntent(lower, snapshot, formatCurrency);
+    return wrapResult(handleAffordabilityIntent(lower, snapshot, formatCurrency));
   }
 
-  // 5. DAILY PACE & BURN RATE QUERY
+  // 6. DAILY PACE & BURN RATE QUERY
   if (isPaceOrBurnRateIntent(lower)) {
-    return handlePaceIntent(snapshot, formatCurrency);
+    return wrapResult(handlePaceIntent(snapshot, formatCurrency));
   }
 
-  // 6. CATEGORY SPENDING BREAKDOWN & INQUIRY
+  // 7. CATEGORY SPENDING BREAKDOWN & INQUIRY
   if (isCategoryBreakdownIntent(lower)) {
-    return handleCategoryQuery(lower, snapshot, formatCurrency);
+    return wrapResult(handleCategoryQuery(lower, snapshot, formatCurrency));
   }
 
-  // 7. RECENT TRANSACTIONS / HISTORY INSPECTION
+  // 8. RECENT TRANSACTIONS / HISTORY INSPECTION
   if (isRecentHistoryIntent(lower)) {
-    return handleRecentHistory(snapshot, formatCurrency);
+    return wrapResult(handleRecentHistory(snapshot, formatCurrency));
   }
 
-  // 8. 50/30/20 BUDGET FRAMEWORK
+  // 9. 50/30/20 (OR CUSTOM) BUDGET FRAMEWORK
   if (isRule503020Intent(lower)) {
-    return handle503020Rule(snapshot, formatCurrency);
+    return wrapResult(handle503020Rule(snapshot, formatCurrency, budgetRatios));
   }
 
-  // 9. EMERGENCY FUND CALCULATOR & STRATEGY
+  // 10. EMERGENCY FUND CALCULATOR & STRATEGY
   if (isEmergencyFundIntent(lower)) {
-    return handleEmergencyFund(snapshot, formatCurrency);
+    return wrapResult(handleEmergencyFund(snapshot, formatCurrency));
   }
 
-  // 10. DEBT PAYOFF STRATEGY (Avalanche vs. Snowball)
+  // 11. DEBT PAYOFF STRATEGY (Avalanche vs. Snowball)
   if (isDebtPayoffIntent(lower)) {
-    return handleDebtPayoff(snapshot, formatCurrency);
+    return wrapResult(handleDebtPayoff(snapshot, formatCurrency));
   }
 
-  // 11. OVER-BUDGET & DEFICIT TRIAGE
+  // 12. OVER-BUDGET & DEFICIT TRIAGE
   if (isOverbudgetIntent(lower, snapshot)) {
-    return handleOverbudgetRecovery(snapshot, formatCurrency);
+    return wrapResult(handleOverbudgetRecovery(snapshot, formatCurrency));
   }
 
-  // 12. CATEGORY-SPECIFIC REDUCTION PLANS (Dining, Shopping, Utilities)
+  // 13. CATEGORY-SPECIFIC REDUCTION PLANS
   if (isCategoryOptimizationIntent(lower)) {
-    return handleCategoryOptimization(lower, snapshot, formatCurrency);
+    return wrapResult(handleCategoryOptimization(lower, snapshot, formatCurrency));
   }
 
-  // 13. FUTURE GOAL & PURCHASE PLANNING ("Can I save for X in Y months?")
+  // 14. FUTURE GOAL & PURCHASE PLANNING
   if (isGoalPlanningIntent(lower)) {
-    return handleGoalPlanning(text, lower, snapshot, formatCurrency);
+    return wrapResult(handleGoalPlanning(text, lower, snapshot, formatCurrency));
   }
 
-  // 14. BILINGUAL / HINGLISH SAVINGS & EXPENSE CONTROL
+  // 15. BILINGUAL / HINGLISH SAVINGS ADVICE
   if (isBilingualSavingsIntent(lower)) {
-    return handleBilingualSavingsAdvice(snapshot, formatCurrency);
+    return wrapResult(handleBilingualSavingsAdvice(snapshot, formatCurrency));
   }
 
-  // 15. INVESTMENT & WEALTH HYGIENE
+  // 16. INVESTMENT & WEALTH HYGIENE
   if (isInvestmentOrWealthIntent(lower)) {
-    return handleInvestmentAdvice(snapshot, formatCurrency);
+    return wrapResult(handleInvestmentAdvice(snapshot, formatCurrency));
   }
 
-  // 16. SAVINGS TIPS & GENERAL FINANCIAL COACHING
+  // 17. SAVINGS TIPS & GENERAL FINANCIAL COACHING
   if (isSavingAdviceIntent(lower)) {
-    return handleSavingAdvice(snapshot, formatCurrency);
+    return wrapResult(handleSavingAdvice(snapshot, formatCurrency));
   }
 
-  // 17. BUDGET SUMMARY (Overview)
+  // 18. BUDGET SUMMARY (Overview)
   if (isSummaryIntent(lower)) {
-    return handleSummary(snapshot, formatCurrency);
+    return wrapResult(handleSummary(snapshot, formatCurrency));
   }
 
-  // 18. MULTI-ITEM BATCH EXPENSE LOGGING (e.g., "50 chai, 120 lunch, 40 auto")
-  const multiItems = extractMultiItemExpenses(text);
+  // 19. MULTI-ITEM BATCH EXPENSE LOGGING (Comma safe: "50 chai, 1,200 lunch, 40 auto")
+  const multiItems = extractMultiItemExpenses(text, parserOptions);
   if (multiItems.length > 1) {
-    return handleMultiItemLogging(multiItems, snapshot, formatCurrency, onSaveExpense);
+    return wrapResult(await handleMultiItemLogging(multiItems, snapshot, formatCurrency, onSaveExpense, recentTransactions, forceLog));
   }
 
-  // 19. SINGLE EXPENSE / INCOME LOGGING (via SMS parser)
-  const parsed = parseSmsNotification(text);
+  // 20. SINGLE EXPENSE / INCOME LOGGING (Confidence-gated + Duplicate-protected)
+  // Pass masked text for storage while using raw/masked text carefully; note masked text preserves A/c last4 and amounts cleanly!
+  const parsed = parseSmsNotification(text, parserOptions);
   if (parsed.success && parsed.amount > 0) {
-    return handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSaveExpense);
+    if (!forceLog) {
+      const duplicateTx = findDuplicateTransaction(parsed, recentTransactions);
+      if (duplicateTx) {
+        return wrapResult(handleDuplicateWarning(parsed, duplicateTx, formatCurrency));
+      }
+
+      if (parsed.isLowConfidence) {
+        return wrapResult(handleLowConfidenceConfirm(parsed, formatCurrency));
+      }
+    }
+
+    return wrapResult(await handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSaveExpense));
   }
 
-  // 20. HYBRID EXTERNAL AI MODEL DISPATCH (Secure, Zero-Leakage Proxy)
+  // 21. OPTIONAL SANITIZED EXTERNAL AI PROXY
   try {
     const aiRes = await Promise.race([
       askCopilotAI(text, snapshot),
@@ -140,24 +309,24 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     ]);
 
     if (aiRes && aiRes.success && aiRes.replyText) {
-      return {
+      return wrapResult({
         replyText: aiRes.replyText,
         type: 'ai_copilot_response',
         model: aiRes.model || 'gemini-2.5-flash',
         suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Saving Tips']
-      };
+      });
     }
   } catch (e) {
-    // Graceful offline fallback to on-device financial intelligence brain
+    // Graceful offline fallback
   }
 
-  // 21. ON-DEVICE SMART FINANCIAL SYNTHESIZER
+  // 22. LOCAL SMART FINANCIAL SYNTHESIZER
   if (isGeneralFinancialQuestion(lower)) {
-    return handleSmartFinancialAdvisory(text, snapshot, formatCurrency);
+    return wrapResult(handleSmartFinancialAdvisory(text, snapshot, formatCurrency));
   }
 
-  // 22. POLITE GUIDANCE ROADMAP
-  return handleFallbackResponse(text, snapshot, formatCurrency);
+  // 23. FALLBACK GUIDANCE ROADMAP
+  return wrapResult(handleFallbackResponse(text, snapshot, formatCurrency));
 }
 
 /* ========================================================
@@ -172,8 +341,13 @@ function isUndoIntent(lower) {
   return /\b(?:undo|delete\s*last|cancel\s*last|remove\s*last|pichla\s*hatao|delete\s*karo)\b/i.test(lower);
 }
 
+function isTodaysTotalIntent(lower) {
+  return /\b(?:today'?s?\s*total|spent\s*today|aaj\s*ka\s*kharcha|today\s*spend)\b/i.test(lower);
+}
+
 function isBillSplitIntent(lower) {
-  return /\b(?:split|divide|hissa|share|doston\s*me)\b/i.test(lower) && /\d+/.test(lower);
+  return (/\b(?:split|divide|hissa|share|doston\s*me)\b/i.test(lower) && /\d+/.test(lower)) ||
+    /\b(?:split|divide)\s+(?:a\s+|the\s+)?bill\b/i.test(lower);
 }
 
 function isAffordabilityIntent(lower) {
@@ -246,17 +420,16 @@ function isGeneralFinancialQuestion(lower) {
 
 function handleGreetingResponse(snapshot, formatCurrency) {
   const replyText =
-    `*PocketNook Copilot Active*\n\n` +
-    `Your private, on-device financial intelligence engine. Here is what I can do for you:\n\n` +
-    `• *Instant Logging:* \`Chai 20\` or \`Lunch 150 card\`\n` +
-    `• *Multi-Item Batch:* \`50 chai, 120 lunch, 40 auto\`\n` +
+    `*PocketNook Chat Active*\n\n` +
+    `Privacy-first expense assistant: sensitive numbers are masked locally before processing. Try these examples:\n\n` +
+    `• *Instant Logging:* \`Chai 20\`, \`Lunch 150 card\`, or \`chai pe 30 kharch kiya\`\n` +
+    `• *Multi-Item Batch:* \`50 chai, 1,200 lunch, 40 auto\`\n` +
     `• *Affordability Diagnosis:* \`Can I afford a 3500 dinner?\`\n` +
-    `• *Smart Bill Split:* \`Split 2400 between 5 people\`\n` +
+    `• *Smart Bill Split:* \`Split 2,400 among 6\` or \`Divide 2500 by 3\`\n` +
     `• *Deep Analytics:* \`Where is my money going?\` or \`Food spend\`\n` +
     `• *50/30/20 Plan:* \`Explain 50/30/20 rule for my budget\`\n` +
-    `• *Safe Daily Pace:* \`What is my safe daily pace?\`\n` +
     `• *Quick Undo:* Send \`Undo\` to remove the last entry.\n\n` +
-    `*Financial Status:* You have *${formatCurrency(snapshot.remainingBudget)}* safe pool remaining this month (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
+    `*Financial Status:* Safe pool remaining: *${formatCurrency(snapshot.remainingBudget)}* (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
 
   return {
     replyText,
@@ -269,120 +442,263 @@ function handleGreetingResponse(snapshot, formatCurrency) {
   };
 }
 
-function handleUndoIntent(snapshot, formatCurrency, onDeleteExpense) {
-  const lastTx = snapshot.safeTransactions[0];
-  if (!lastTx) {
+async function handleUndoIntent(snapshot, formatCurrency, onDeleteExpense, { targetTxId = null, lastLoggedBatch = null } = {}) {
+  let txToRemove = null;
+  if (targetTxId) {
+    txToRemove = snapshot.safeTransactions.find(t => String(t.id) === String(targetTxId)) || {
+      id: targetTxId,
+      amount: 0,
+      merchant: 'Logged Entry',
+      category: 'Expense',
+      paymentMode: 'UPI'
+    };
+  } else {
+    txToRemove = snapshot.safeTransactions[0];
+  }
+
+  if (!txToRemove) {
     return {
       replyText: `No recent transactions found in this billing cycle to undo.`,
-      type: 'undo_failed'
+      type: 'undo_failed',
+      suggestedChips: ['Summary', 'Chai 20']
     };
   }
 
-  if (typeof onDeleteExpense === 'function') {
-    onDeleteExpense(lastTx.id);
+  if (typeof onDeleteExpense === 'function' && txToRemove.id) {
+    await onDeleteExpense(txToRemove.id);
   }
+
+  const batchNote = (lastLoggedBatch && lastLoggedBatch.length > 1)
+    ? `\n\n_Note: This removed the most recent entry. ${lastLoggedBatch.length - 1} earlier items from your last batch remain logged._`
+    : '';
 
   const replyText =
     `*Transaction Undone & Removed!*\n` +
-    `*Removed:* ₹${lastTx.amount} for *${lastTx.merchant}* (${lastTx.category})\n` +
-    `*Payment Mode:* ${lastTx.paymentMode}\n\n` +
-    `Updated remaining balance is *${formatCurrency(snapshot.remainingBudget + lastTx.amount)}*.`;
+    `*Removed:* ${formatCurrency(txToRemove.amount)} for *${txToRemove.merchant}* (${txToRemove.category})\n` +
+    `*Payment Mode:* ${txToRemove.paymentMode}\n\n` +
+    `Updated remaining balance is *${formatCurrency(snapshot.remainingBudget + (txToRemove.amount || 0))}*.` +
+    batchNote;
 
   return {
     replyText,
     type: 'undo_success',
-    undoneTransaction: lastTx
+    undoneTransaction: txToRemove,
+    suggestedChips: ['Summary', 'Recent expenses', 'Daily Pace']
   };
 }
 
-function handleBillSplitIntent(text, lower, formatCurrency) {
-  const numbers = text.match(/\d+(?:[.,]\d+)?/g) || [];
-  if (numbers.length < 2) {
+function handleTodaysTotal(snapshot, formatCurrency) {
+  const { todaySpent, safeDailyPace } = snapshot;
+  const remainingToday = Math.max(0, safeDailyPace - todaySpent);
+  const replyText =
+    `*Today's Spending Check*\n` +
+    `*Spent Today:* *${formatCurrency(todaySpent)}*\n` +
+    `*Safe Daily Pace:* ${formatCurrency(safeDailyPace)}/day\n\n` +
+    (todaySpent <= safeDailyPace
+      ? `You still have *${formatCurrency(remainingToday)}* within today's safe allowance.`
+      : `You are *${formatCurrency(todaySpent - safeDailyPace)}* above today's pace.`);
+
+  return {
+    replyText,
+    type: 'todays_total',
+    suggestedChips: ['Food Spend', 'Recent expenses', 'Summary']
+  };
+}
+
+function handleBillSplitIntent(text, lower, formatCurrency, defaultPaymentMode = 'UPI') {
+  // Parse total bill + headcount contextually rather than Math.min / Math.max guesswork
+  const tokenRegex = /([0-9,]+(?:\.[0-9]{1,2})?(?:\s*(?:k|lakh|lakhs|lac|l|cr|crore))?)/gi;
+  const rawTokens = text.match(tokenRegex) || [];
+
+  if (rawTokens.length < 2) {
     return {
-      replyText: `To split a bill, please specify the total amount and number of people.\n\n*Example:* \`Split 2400 between 6 people\``,
+      replyText: `To split a bill, please specify both the total amount and headcount.\n\n*Examples:* \`Split 2,400 among 6\`, \`Divide 2500 by 3\`, or \`Split 1800 with 4 friends\``,
+      type: 'split_error',
+      suggestedChips: ['Split 2,400 between 6', 'Summary']
+    };
+  }
+
+  let totalBill = parseIndianAmount(rawTokens[0]);
+  let peopleCount = parseInt(String(rawTokens[1]).replace(/,/g, ''), 10);
+
+  // Explicit people count match if user put count inside "between/among/by/with/for N" or "N ways"
+  const explicitPeopleMatch = lower.match(/(?:between|among|by|with|for|into)\s+(\d+)\s*(?:people|persons|friends|mates|ways|members|pax|logon|doston)?\b|(\d+)\s*ways\b/i);
+  if (explicitPeopleMatch) {
+    const parsedPeople = parseInt(explicitPeopleMatch[1] || explicitPeopleMatch[2], 10);
+    if (!isNaN(parsedPeople)) {
+      peopleCount = parsedPeople;
+      // Ensure totalBill uses the non-people token
+      const nonPeopleTokens = rawTokens.filter(t => parseInt(t.replace(/,/g, ''), 10) !== parsedPeople);
+      if (nonPeopleTokens.length > 0) {
+        totalBill = parseIndianAmount(nonPeopleTokens[0]);
+      }
+    }
+  }
+
+  if (!totalBill || totalBill <= 0) {
+    return {
+      replyText: `Please specify a valid bill amount greater than ₹0.`,
       type: 'split_error'
     };
   }
 
-  const nums = numbers.map(n => parseFloat(n.replace(/,/g, '')));
-  const totalBill = Math.max(...nums);
-  const peopleCount = Math.min(...nums);
-
-  if (peopleCount <= 0) {
+  if (isNaN(peopleCount) || peopleCount <= 0) {
     return {
       replyText: `The number of people must be at least 1.`,
       type: 'split_error'
     };
   }
 
-  const perPerson = Math.round((totalBill / peopleCount) * 100) / 100;
+  const isWithFriendsPhrase = /\bwith\s+\d+\s+(?:friends?|mates?|people|persons|doston)\b/i.test(lower);
+  const perPersonExact = totalBill / peopleCount;
+  const roundedBase = Math.floor(perPersonExact);
+  const remainder = Math.round((totalBill - roundedBase * peopleCount) * 100) / 100;
+
+  // Compute exact remainder distribution when not evenly divisible in whole rupees
+  let breakdownNote = '';
+  let userShare = Math.round(perPersonExact * 100) / 100;
+  if (Number.isInteger(totalBill) && totalBill % peopleCount !== 0) {
+    const intRem = totalBill % peopleCount;
+    const higherCount = intRem;
+    const lowerCount = peopleCount - intRem;
+    userShare = roundedBase + 1;
+    breakdownNote = `\n*Exact Rounding Breakdown:* ${higherCount} × ${formatCurrency(roundedBase + 1)} + ${lowerCount} × ${formatCurrency(roundedBase)} (Total ${formatCurrency(totalBill)} exact)`;
+  }
+
+  const friendsAmbiguityNote = isWithFriendsPhrase
+    ? `\n_Note: Split ${peopleCount} ways above. If "${peopleCount} friends" excludes you, tap below to split ${peopleCount + 1} ways._`
+    : '';
+
+  const shareForLog = Math.round(userShare);
 
   const replyText =
     `*Smart Bill Split Calculation*\n` +
     `*Total Bill:* ${formatCurrency(totalBill)}\n` +
     `*Split Between:* ${peopleCount} people\n` +
-    `*Each Person Owes:* *${formatCurrency(perPerson)}*\n\n` +
-    `Want me to log your share? Reply \`Lunch ${Math.round(perPerson)} upi\` to record it immediately.`;
+    `*Each Person Owes:* *${formatCurrency(userShare)}*` +
+    breakdownNote +
+    friendsAmbiguityNote +
+    `\n\nTap below to record your share or reply \`Dinner ${shareForLog} ${defaultPaymentMode.toLowerCase()}\`.`;
+
+  const actionButtons = [
+    {
+      label: `Log My Share (${formatCurrency(shareForLog)})`,
+      actionType: 'log_share',
+      sharePayload: {
+        amount: shareForLog,
+        merchant: 'Shared Bill',
+        category: 'Food & Dining',
+        payment_mode: defaultPaymentMode,
+        date: new Date().toISOString().slice(0, 10)
+      },
+      query: `Dinner ${shareForLog} ${defaultPaymentMode.toLowerCase()}`
+    }
+  ];
+
+  if (isWithFriendsPhrase) {
+    actionButtons.push({
+      label: `Split ${peopleCount + 1} Ways (Incl. You)`,
+      query: `Split ${totalBill} between ${peopleCount + 1} people`
+    });
+  } else {
+    actionButtons.push({ label: 'Check Budget', query: 'Summary' });
+  }
 
   return {
     replyText,
     type: 'split_bill',
-    data: { totalBill, peopleCount, perPerson },
-    suggestedChips: [`Log Share ${Math.round(perPerson)}`, 'Summary'],
-    actionButtons: [
-      { label: `Log My Share (${formatCurrency(perPerson)})`, query: `Dinner ${Math.round(perPerson)} upi` },
-      { label: 'Check Budget', query: 'Summary' }
-    ]
+    data: { totalBill, peopleCount, perPerson: userShare, remainder },
+    suggestedChips: [`Log Share ${shareForLog}`, 'Summary'],
+    actionButtons
   };
 }
 
 function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
-  const matches = lower.match(/\d+(?:[.,]\d+)?/g) || [];
-  if (matches.length === 0) {
+  const tokenMatch = lower.match(/([0-9,]+(?:\.[0-9]{1,2})?(?:\s*(?:k|lakh|lakhs|lac|l|cr|crore))?)/i);
+  const plannedAmount = tokenMatch ? parseIndianAmount(tokenMatch[1]) : null;
+
+  if (!plannedAmount || plannedAmount <= 0) {
     return {
-      replyText: `Please specify the amount you want to spend.\n\n*Example:* \`Can I afford a 4500 smartwatch?\``,
+      replyText: `Please specify the amount you want to spend.\n\n*Example:* \`Can I afford a 4,500 smartwatch?\``,
       type: 'affordability_error'
     };
   }
 
-  const plannedAmount = parseFloat(matches[0].replace(/,/g, ''));
+  if (!snapshot.hasBudgetConfigured) {
+    return {
+      replyText:
+        `*Affordability Financial Diagnosis*\n` +
+        `*Planned Purchase:* ${formatCurrency(plannedAmount)}\n` +
+        `*Status:* No monthly budget configured yet.\n\n` +
+        `Set a monthly budget in Budget Settings so I can evaluate affordability against your safe pool and upcoming bills.`,
+      type: 'affordability_analysis',
+      data: { plannedAmount, remaining: 0, newRemaining: -plannedAmount, newPace: 0 },
+      actionButtons: [{ label: 'Summary', query: 'Summary' }]
+    };
+  }
+
   const remaining = snapshot.remainingBudget;
+  const commitments = snapshot.totalUpcomingCommitted || 0;
+  const freePool = snapshot.freeSafePool;
   const days = snapshot.daysRemaining;
   const currentPace = snapshot.safeDailyPace;
 
   const newRemaining = remaining - plannedAmount;
-  const newPace = days > 0 ? Math.round(newRemaining / days) : 0;
+  const freeAfterPurchase = freePool - plannedAmount;
+  const newPace = days > 0 ? Math.round(freeAfterPurchase / days) : 0;
 
   let advice = '';
 
-  if (newRemaining < 0) {
+  if (remaining <= 0) {
+    advice =
+      `*Verdict: Budget Risk — Already Over Budget.*\n` +
+      `You are currently ${formatCurrency(Math.abs(remaining))} past your monthly budget. ` +
+      `Recommendation: Defer non-essential purchases until next cycle.`;
+  } else if (newRemaining < 0) {
     advice =
       `*Verdict: Budget Risk Detected.*\n` +
-      `Spending ${formatCurrency(plannedAmount)} will push you *${formatCurrency(Math.abs(newRemaining))} over budget* with ${days} days remaining in November. ` +
-      `Recommendation: Hold off until next month or reallocate from another category.`;
-  } else if (newPace < currentPace * 0.45) {
+      `Spending ${formatCurrency(plannedAmount)} pushes you *${formatCurrency(Math.abs(newRemaining))} over budget* with ${days} ${days === 1 ? 'day' : 'days'} left. ` +
+      `Recommendation: Hold off or reallocate from another category.`;
+  } else if (freeAfterPurchase < 0) {
     advice =
-      `*Verdict: Tight Squeeze.*\n` +
-      `You can technically afford it, but your safe daily spending will shrink from *${formatCurrency(currentPace)}/day* down to *${formatCurrency(newPace)}/day* for the next ${days} days. ` +
-      `Recommendation: Keep dining and discretionary shopping minimal for the rest of the month.`;
+      `*Verdict: Budget Risk — Encroaches on Upcoming Bills.*\n` +
+      `While within raw budget, you have *${formatCurrency(commitments)}* in upcoming committed bills/EMIs. This purchase leaves a *${formatCurrency(Math.abs(freeAfterPurchase))}* shortfall against upcoming commitments. ` +
+      `Recommendation: Keep cash reserved for upcoming due bills first.`;
   } else {
-    advice =
-      `*Verdict: Comfortably Affordable!*\n` +
-      `After spending ${formatCurrency(plannedAmount)}, you will still have *${formatCurrency(newRemaining)}* left in your safe pool (*${formatCurrency(newPace)}/day* for ${days} days).`;
+    const ratioOfFree = freePool > 0 ? plannedAmount / freePool : 1;
+    if (ratioOfFree <= 0.25) {
+      advice =
+        `*Verdict: Comfortably Affordable!*\n` +
+        `Uses ${Math.round(ratioOfFree * 100)}% of your free safe pool. After this spend, you retain *${formatCurrency(freeAfterPurchase)}* (*${formatCurrency(newPace)}/day* for ${days} ${days === 1 ? 'day' : 'days'}).`;
+    } else if (ratioOfFree <= 0.75) {
+      advice =
+        `*Verdict: Moderate Caution.*\n` +
+        `Uses ${Math.round(ratioOfFree * 100)}% of your free pool, adjusting your daily pace from *${formatCurrency(currentPace)}/day* to *${formatCurrency(newPace)}/day*. Keep secondary discretionary spends light.`;
+    } else {
+      advice =
+        `*Verdict: Tight Squeeze (75%–100% of Free Pool).*\n` +
+        `This consumes *${Math.round(ratioOfFree * 100)}%* of your remaining uncommitted funds, leaving only *${formatCurrency(freeAfterPurchase)}* total (*${formatCurrency(newPace)}/day*) for the rest of the month.`;
+    }
   }
+
+  const lastDayNote = snapshot.isLastDayOfMonth ? ' • Final day of month' : '';
+  const commitmentsLine = commitments > 0
+    ? `\n*Committed Upcoming Bills:* ${formatCurrency(commitments)} (Free Pool: ${formatCurrency(freePool)})`
+    : '';
 
   const replyText =
     `*Affordability Financial Diagnosis*\n` +
     `*Planned Purchase:* ${formatCurrency(plannedAmount)}\n` +
-    `*Current Remaining:* ${formatCurrency(remaining)} (${days} days left)\n` +
-    `*Current Daily Pace:* ${formatCurrency(currentPace)}/day\n` +
+    `*Current Remaining:* ${formatCurrency(remaining)} (${days} ${days === 1 ? 'day' : 'days'} left${lastDayNote})` +
+    commitmentsLine +
+    `\n*Current Daily Pace:* ${formatCurrency(currentPace)}/day\n` +
     `*Projected Daily Pace:* ${formatCurrency(newPace)}/day\n\n` +
     `${advice}`;
 
   return {
     replyText,
     type: 'affordability_analysis',
-    data: { plannedAmount, remaining, newRemaining, newPace },
+    data: { plannedAmount, remaining, newRemaining, newPace, freeAfterPurchase },
     actionButtons: [
       { label: 'Daily Pace', query: 'Daily Pace' },
       { label: 'Summary', query: 'Summary' }
@@ -391,13 +707,13 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
 }
 
 function handlePaceIntent(snapshot, formatCurrency) {
-  const { remainingBudget, safeDailyPace, daysRemaining, todaySpent } = snapshot;
+  const { remainingBudget, safeDailyPace, daysRemaining, todaySpent, isLastDayOfMonth } = snapshot;
 
   const isTodayPaceHealthy = todaySpent <= safeDailyPace;
   const replyText =
     `*Safe Daily Burn Rate*\n` +
     `*Safe Target:* *${formatCurrency(safeDailyPace)}/day*\n` +
-    `*Days Left in Month:* ${daysRemaining} days\n` +
+    `*Days Left in Month:* ${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'}${isLastDayOfMonth ? ' (Final day)' : ''}\n` +
     `*Remaining Pool:* ${formatCurrency(remainingBudget)}\n` +
     `*Spent Today:* ${formatCurrency(todaySpent)}\n\n` +
     (isTodayPaceHealthy
@@ -407,37 +723,46 @@ function handlePaceIntent(snapshot, formatCurrency) {
   return {
     replyText,
     type: 'daily_pace',
-    suggestedChips: ['Summary', 'Food Spend', 'Tips'],
+    suggestedChips: ['Food Spend', 'Summary', 'Tips'],
     actionButtons: [
-      { label: 'Saving Tips', query: 'Saving Tips' },
-      { label: 'Summary', query: 'Summary' }
+      { label: 'Food Spend', query: 'Food Spend' },
+      { label: 'Saving Tips', query: 'Saving Tips' }
     ]
   };
 }
 
-function handle503020Rule(snapshot, formatCurrency) {
+function handle503020Rule(snapshot, formatCurrency, ratios = { needs: 50, wants: 30, savings: 20 }) {
   const budget = snapshot.budget || 30000;
-  const needs = Math.round(budget * 0.50);
-  const wants = Math.round(budget * 0.30);
-  const savings = Math.round(budget * 0.20);
+  const needsPct = ratios?.needs ?? 50;
+  const wantsPct = ratios?.wants ?? 30;
+  const savingsPct = ratios?.savings ?? 20;
+
+  const needs = Math.round(budget * (needsPct / 100));
+  const wants = Math.round(budget * (wantsPct / 100));
+  const savings = Math.round(budget * (savingsPct / 100));
   const totalSpent = snapshot.totalSpent;
   const spendLimit = needs + wants;
 
   const replyText =
     `*The 50/30/20 Financial Framework*\n` +
-    `Calibrated to your monthly baseline of *${formatCurrency(budget)}*:\n\n` +
-    `• *50% Needs (${formatCurrency(needs)}):* Essential groceries, rent, utilities, medicines, basic transit.\n` +
-    `• *30% Wants (${formatCurrency(wants)}):* Dining out, cafes, OTT subscriptions, shopping, hobbies.\n` +
-    `• *20% Savings (${formatCurrency(savings)}):* Emergency fund, SIPs, debt acceleration, future goals.\n\n` +
+    `Calibrated to your monthly baseline of *${formatCurrency(budget)}* (${needsPct}/${wantsPct}/${savingsPct} split):\n\n` +
+    `• *${needsPct}% Needs (${formatCurrency(needs)}):* Essential groceries, rent, EMIs, family support, utilities, transit.\n` +
+    `• *${wantsPct}% Wants (${formatCurrency(wants)}):* Dining out, cafes, OTT subscriptions, shopping, hobbies.\n` +
+    `• *${savingsPct}% Savings (${formatCurrency(savings)}):* Emergency fund, SIPs, debt acceleration, future goals.\n\n` +
     `*Current Status:* You have spent *${formatCurrency(totalSpent)}* so far this month. ` +
     (totalSpent > spendLimit
-      ? `You are past the recommended 80% spending ceiling (${formatCurrency(spendLimit)}). Restrict further spends to essential needs only.`
-      : `You are within the ${formatCurrency(spendLimit)} operational limit with *${formatCurrency(spendLimit - totalSpent)}* buffer before tapping savings.`);
+      ? `You are past the recommended ${needsPct + wantsPct}% spending ceiling (${formatCurrency(spendLimit)}). Restrict further spends to essential needs only.`
+      : `You are within the ${formatCurrency(spendLimit)} operational limit with *${formatCurrency(spendLimit - totalSpent)}* buffer before tapping savings.`) +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
     type: 'budget_framework',
-    suggestedChips: ['Summary', 'Daily Pace', 'Emergency Fund', 'Tips']
+    suggestedChips: ['Summary', 'Daily Pace', 'Emergency Fund', 'Tips'],
+    actionButtons: [
+      { label: 'Apply 55/25/20 (EMI-Heavy)', query: 'apply 55/25/20' },
+      { label: 'Apply 50/30/20 Standard', query: 'apply 50/30/20' }
+    ]
   };
 }
 
@@ -448,13 +773,14 @@ function handleEmergencyFund(snapshot, formatCurrency) {
 
   const replyText =
     `*Emergency Reserve Architecture*\n` +
-    `Based on your current spending rate of ~*${formatCurrency(monthlyBurn)}/month*:\n\n` +
+    `Based on your current monthly baseline of ~*${formatCurrency(monthlyBurn)}/month*:\n\n` +
     `• *3-Month Baseline Cushion:* *${formatCurrency(fund3Month)}* (Covers sudden medical or job transition)\n` +
     `• *6-Month Fortress Cushion:* *${formatCurrency(fund6Month)}* (Complete multi-month economic resilience)\n\n` +
     `*Strategic Placement:*\n` +
     `1. Keep 1 month in a high-interest liquid savings account with instant UPI access.\n` +
     `2. Keep the remaining 2–5 months in sweep-in FDs or liquid overnight funds with zero exit loads.\n` +
-    `3. Never lock emergency cash in volatile equities or locking schemes.`;
+    `3. Never lock emergency cash in volatile equities or locking schemes.` +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -470,7 +796,8 @@ function handleDebtPayoff(snapshot, formatCurrency) {
     `Pay minimums on everything, then channel all surplus cash to the debt with the *highest interest rate* (e.g. Credit Cards @ 36–42% APR). Saves the most money in interest charges.\n\n` +
     `• *Method 2: Debt Snowball (Psychological Momentum)*\n` +
     `Pay minimums on everything, then channel surplus cash to the *smallest balance*. Clearing small debts quickly builds motivational momentum.\n\n` +
-    `*PocketNook Recommendation:* For revolving credit card debt, *always use Avalanche*. A 40% APR card compound will negate any mutual fund gains. Clear high-interest card dues first!`;
+    `*PocketNook Recommendation:* For revolving credit card debt, *always prioritize high-interest dues first*.` +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -487,12 +814,12 @@ function handleOverbudgetRecovery(snapshot, formatCurrency) {
   const replyText =
     `*Over-Budget Recovery & Triage Plan*\n` +
     (snapshot.remainingBudget < 0
-      ? `Your spending has exceeded the monthly budget by *${formatCurrency(deficit)}* with ${days} days remaining.\n\n`
+      ? `Your spending has exceeded the monthly budget by *${formatCurrency(deficit)}* with ${days} ${days === 1 ? 'day' : 'days'} remaining.\n\n`
       : `Your spending velocity is high with only *${formatCurrency(snapshot.remainingBudget)}* left for ${days} days.\n\n`) +
     `*Immediate 3-Step Turnaround:*\n` +
     `1. *Freeze Non-Essential Outflows:* Zero dining out, cafes, or shopping for the next 7 days.\n` +
-    `2. *Tackle Top Category:* Your biggest outflow is *${topCat}*. Cap all secondary purchases here immediately.\n` +
-    `3. *Zero-Spend Days:* Target 3 zero-expense weekdays to halt the burn rate and stabilize your cash position.`;
+    `2. *Tackle Top Category:* Your biggest outflow is *${topCat}*. Cap secondary purchases here immediately.\n` +
+    `3. *Zero-Spend Days:* Target 3 zero-expense weekdays to stabilize your cash position.`;
 
   return {
     replyText,
@@ -508,27 +835,27 @@ function handleCategoryOptimization(lower, snapshot, formatCurrency) {
   if (lower.includes('food') || lower.includes('dining') || lower.includes('zomato') || lower.includes('swiggy')) {
     title = 'Food & Dining Optimization Plan';
     tips =
-      `• *Cap Food Delivery to 1x/Week:* Delivery fees, packaging, and platform markups add 35-50% to meal costs.\n` +
-      `• *Meal Prep Staples:* Batch cooking lunch on Sundays cuts weekday office dining expenses by up to 60%.\n` +
-      `• *The ₹30 Chai/Snack Audit:* Multiple daily micro-spends average ~₹1,800/month. Keep a dedicated weekly cash envelope for snacks.`;
+      `• *Cap Food Delivery to 1x/Week:* Delivery fees, packaging, and platform markups add 35–50% to meal costs.\n` +
+      `• *Meal Prep Staples:* Batch cooking lunch on Sundays cuts weekday office dining expenses significantly.\n` +
+      `• *Daily Micro-Spend Audit:* Frequent small chai/snack orders add up quickly over a month. Keep a dedicated weekly cap.`;
   } else if (lower.includes('shopping') || lower.includes('clothes')) {
     title = 'Shopping & Discretionary Control';
     tips =
-      `• *The 48-Hour Cooling Rule:* For any non-essential purchase > ₹1,000, wait 48 hours before checking out. 70% of impulse desires fade.\n` +
-      `• *Cost-Per-Use Formula:* Divide item price by projected uses. If you won't use it 30+ times, rent or skip it.\n` +
-      `• *Unsubscribe from Sale Push Alerts:* Delete shopping app notification permissions to remove artificial urgency.`;
+      `• *The 48-Hour Cooling Rule:* For non-essential purchases > ₹1,000, wait 48 hours before checking out.\n` +
+      `• *Cost-Per-Use Check:* Estimate how many times you will realistically use the item.\n` +
+      `• *Mute Sale Push Alerts:* Disable promotional shopping notifications to avoid artificial urgency.`;
   } else {
     title = 'Recurring Bills & Subscriptions Audit';
     tips =
       `• *Ghost Subscription Purge:* Review streaming, gym, and app renewals. Cancel anything unused in the last 30 days.\n` +
-      `• *Switch to Annual Plans:* For services you use daily (broadband, cloud), annual billing yields 15-25% instant savings.\n` +
-      `• *Family Sharing Plans:* Pool music and OTT subscriptions with family or roommates to split costs.`;
+      `• *Annual vs Monthly Audit:* For services used daily, annual plans often cut costs by 15–25%.\n` +
+      `• *Family Sharing Plans:* Pool OTT/broadband plans where permitted to split fixed overhead.`;
   }
 
   const replyText =
     `*${title}*\n\n` +
     `${tips}\n\n` +
-    `*Current Daily Safe Pace:* ${formatCurrency(snapshot.safeDailyPace)}/day. Trimming these leaks will immediately boost your end-of-month savings pool!`;
+    `*Current Daily Safe Pace:* ${formatCurrency(snapshot.safeDailyPace)}/day.`;
 
   return {
     replyText,
@@ -538,9 +865,10 @@ function handleCategoryOptimization(lower, snapshot, formatCurrency) {
 }
 
 function handleGoalPlanning(text, lower, snapshot, formatCurrency) {
-  const numbers = text.match(/\d+(?:[.,]\d+)?/g) || [];
-  const targetAmount = numbers.length > 0 ? parseFloat(numbers[0].replace(/,/g, '')) : 25000;
-  const months = numbers.length > 1 ? Math.min(24, Math.max(1, parseInt(numbers[1], 10))) : 6;
+  const tokenRegex = /([0-9,]+(?:\.[0-9]{1,2})?(?:\s*(?:k|lakh|lakhs|lac|l|cr|crore))?)/gi;
+  const numbers = text.match(tokenRegex) || [];
+  const targetAmount = numbers.length > 0 ? (parseIndianAmount(numbers[0]) || 25000) : 25000;
+  const months = numbers.length > 1 ? Math.min(36, Math.max(1, parseInt(numbers[1].replace(/,/g, ''), 10))) : 6;
   const monthlyNeeded = Math.round(targetAmount / months);
 
   const replyText =
@@ -551,8 +879,9 @@ function handleGoalPlanning(text, lower, snapshot, formatCurrency) {
     `*Feasibility Assessment:*\n` +
     `Your current monthly safe remaining pool is *${formatCurrency(snapshot.remainingBudget)}*. ` +
     (snapshot.remainingBudget >= monthlyNeeded
-      ? `This goal is *achievable*! Saving ${formatCurrency(monthlyNeeded)} leaves you with a comfortable buffer each month.`
-      : `This will require tighter discipline. Consider extending your timeline to ${Math.ceil(targetAmount / (Math.max(snapshot.remainingBudget, 1000)))} months or cutting discretionary channels.`);
+      ? `This goal is *achievable*! Setting aside ${formatCurrency(monthlyNeeded)}/month keeps you on target.`
+      : `This requires tighter discipline or extending your timeline to ${Math.ceil(targetAmount / (Math.max(snapshot.remainingBudget, 1000)))} months.`) +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -569,8 +898,9 @@ function handleBilingualSavingsAdvice(snapshot, formatCurrency) {
     `*Smart Savings Plan (पैसे बचाने का आसान तरीका)*\n\n` +
     `1. *Safe Daily Spending Target:* Aapka daily kharch target *${formatCurrency(pace)}/day* hai. Iske andar rehne par mahine ke ant me paisa bachega.\n` +
     `2. *Pay Yourself First:* Salary aate hi sabse pehle 20% savings alag account ya SIP me transfer karein, baki 80% se kharcha chalayein.\n` +
-    `3. *Top Category Check:* Aapka sabse bada kharcha *${topCat}* me ho raha hai. Isme 15% ki katauti se aaram se mahine ke ₹1,500–₹3,000 bach sakte hain.\n` +
-    `4. *24 Ghante Ka Niyam:* Kisi bhi ₹1,000+ ki cheez ko khareedne se pehle 24 ghante intezaar karein; impulse shopping ruk jayegi.`;
+    `3. *Top Category Check:* Aapka sabse bada kharcha *${topCat}* me ho raha hai. Isme 15% katauti karne se aaram se mahine ke ₹1,500–₹3,000 bach sakte hain.\n` +
+    `4. *24 Ghante Ka Niyam:* Kisi bhi ₹1,000+ ki cheez ko khareedne se pehle 24 ghante intezaar karein; impulse shopping ruk jayegi.` +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -582,10 +912,11 @@ function handleBilingualSavingsAdvice(snapshot, formatCurrency) {
 function handleInvestmentAdvice(snapshot, formatCurrency) {
   const replyText =
     `*Core Wealth Building & Investment Principles*\n\n` +
-    `1. *First Priority — Emergency Fund:* Have 3–6 months of expenses in a liquid FD or high-yield account before investing in market instruments.\n` +
-    `2. *Eliminate High-Interest Debt:* Never invest in equities while carrying 36%+ credit card debt. Pay off cards first.\n` +
-    `3. *Low-Cost Index Funds & SIPs:* Invest in broad market index funds (Nifty 50) via monthly disciplined SIPs for a 5+ year horizon.\n` +
-    `4. *Never Speculate Essential Capital:* Money you will need within the next 12–24 months belongs in safe, capital-preserving instruments (FD/Arbitrage/Liquid funds).`;
+    `1. *First Priority — Emergency Fund:* Keep 3–6 months of expenses in a liquid FD or high-yield account before equity exposure.\n` +
+    `2. *Eliminate High-Interest Debt:* Clear revolving credit card debt before chasing market returns.\n` +
+    `3. *Broad Index Funds & SIPs:* Disciplined monthly SIPs in diversified funds suit long (5+ year) horizons.\n` +
+    `4. *Protect Near-Term Cash:* Capital needed within 12–24 months belongs in capital-preserving liquid instruments.` +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -599,9 +930,9 @@ function handleSmartFinancialAdvisory(text, snapshot, formatCurrency) {
     `*PocketNook Financial Intelligence Diagnosis*\n\n` +
     `Regarding your query on *"_` + text.slice(0, 45) + `_"*:\n\n` +
     `• *Budget Health:* You have spent *${formatCurrency(snapshot.totalSpent)}* with *${formatCurrency(snapshot.remainingBudget)}* remaining this cycle.\n` +
-    `• *Daily Discipline:* Your safe daily spending pace is *${formatCurrency(snapshot.safeDailyPace)}/day* across the next ${snapshot.daysRemaining} days.\n` +
-    `• *Primary Recommendation:* Maintain consistency. Prioritize building a 3-month reserve and keeping daily spends below ${formatCurrency(snapshot.safeDailyPace)}.\n\n` +
-    `Ask me about \`50/30/20 rule\`, \`Emergency fund\`, \`Daily pace\`, or \`Split bill\` for deeper analysis!`;
+    `• *Daily Discipline:* Your safe daily spending pace is *${formatCurrency(snapshot.safeDailyPace)}/day* across ${snapshot.daysRemaining} ${snapshot.daysRemaining === 1 ? 'day' : 'days'}.\n` +
+    `• *Primary Recommendation:* Maintain consistency, track upcoming fixed bills, and keep daily spends below ${formatCurrency(snapshot.safeDailyPace)}.\n\n` +
+    `Ask about \`50/30/20 rule\`, \`Emergency fund\`, \`Daily pace\`, or \`Split bill\` for deeper calculations.`;
 
   return {
     replyText,
@@ -628,29 +959,31 @@ function handleCategoryQuery(lower, snapshot, formatCurrency) {
           ? `This is one of your active spending channels this month.`
           : `Great news! You have spent ₹0 in ${catRule.category} so far this month.`);
 
-      return { replyText, type: 'category_detail' };
+      return { replyText, type: 'category_detail', suggestedChips: ['Summary', 'Daily Pace', 'Tips'] };
     }
   }
 
   if (categories.length === 0) {
     return {
       replyText: `You haven't recorded any category expenses yet this month. Start by logging something like \`Chai 20\`!`,
-      type: 'category_breakdown'
+      type: 'category_breakdown',
+      suggestedChips: ['Summary', 'Chai 20']
     };
   }
 
+  const currentMonthName = new Date().toLocaleString('en-IN', { month: 'long' });
   const topCats = categories.slice(0, 4);
   const chartLines = topCats.map((c, i) => `${i + 1}. *${c.category}:* ${formatCurrency(c.spent)} (${c.percent}%)`).join('\n');
 
   const replyText =
-    `*Top Spending Categories (November)*\n` +
+    `*Top Spending Categories (${currentMonthName})*\n` +
     `${chartLines}\n\n` +
     `*Top Category:* *${snapshot.topCategory?.category || 'General'}* (${snapshot.topCategory?.percent || 0}% of expenses)`;
 
   return {
     replyText,
     type: 'category_breakdown',
-    suggestedChips: ['Daily Pace', 'Tips', 'Summary']
+    suggestedChips: ['Food Spend', 'Daily Pace', 'Summary']
   };
 }
 
@@ -670,7 +1003,7 @@ function handleRecentHistory(snapshot, formatCurrency) {
   const replyText =
     `*Recent Spending History (${txs.length} Transactions)*\n` +
     `${list}\n\n` +
-    `Send \`Undo\` to delete the most recent one.`;
+    `Send \`Undo\` to remove *${txs[0].merchant}* (${formatCurrency(txs[0].amount)}).`;
 
   return {
     replyText,
@@ -687,8 +1020,9 @@ function handleSavingAdvice(snapshot, formatCurrency) {
   const replyText =
     `*Personalized Financial Coaching*\n` +
     `1. *Top Optimization Target:* Your highest expense is *${topCat}* (${formatCurrency(topSpent)}). Trimming 15% here saves *${formatCurrency(Math.round(topSpent * 0.15))}*.\n` +
-    `2. *The Daily Pace Rule:* Your safe burn rate is *${formatCurrency(pace)}/day*. Setting a micro-goal to spend zero on 2 weekdays adds *${formatCurrency(pace * 2)}* directly to your savings pool.\n` +
-    `3. *Micro-Expense Alert:* Multiple ₹20–₹50 spends add up quickly to ~₹1,500/month. Use PocketNook's Speed Chips to stay mindful!`;
+    `2. *The Daily Pace Rule:* Your safe burn rate is *${formatCurrency(pace)}/day*. Keeping 2 weekdays zero-spend adds *${formatCurrency(pace * 2)}* directly to your savings pool.\n` +
+    `3. *Micro-Expense Alert:* Small ₹20–₹50 daily spends compound fast. Use Speed Chips to track them visibly.` +
+    FINANCIAL_DISCLAIMER;
 
   return {
     replyText,
@@ -718,27 +1052,116 @@ function handleSummary(snapshot, formatCurrency) {
   };
 }
 
-function extractMultiItemExpenses(text) {
-  const parts = text.split(/[,;\n]|\band\b/i).map(p => p.trim()).filter(Boolean);
-  const parsedItems = [];
+/**
+ * Safely splits multi-item inputs without breaking Indian comma-grouped amounts like "50 chai, 1,200 lunch, 40 auto"
+ */
+export function extractMultiItemExpenses(text, options = {}) {
+  const parts = text
+    .split(/(?<!\d),(?!\d)|,(?=\s)|[;\n]+|\s+\band\b\s+/i)
+    .map(p => p.trim())
+    .filter(Boolean);
 
+  const parsedItems = [];
   for (const part of parts) {
-    const item = parseSmsNotification(part);
+    const item = parseSmsNotification(part, options);
     if (item.success && item.amount > 0) {
       parsedItems.push(item);
     }
   }
-
   return parsedItems;
 }
 
-async function handleMultiItemLogging(items, snapshot, formatCurrency, onSaveExpense) {
+function handleDuplicateWarning(parsed, duplicateTx, formatCurrency) {
+  const replyText =
+    `*Possible Duplicate Detected*\n` +
+    `An identical entry for *${parsed.merchant}* (${formatCurrency(parsed.amount)}) was already logged today (${duplicateTx.date || 'today'}).\n\n` +
+    `Did you want to skip this duplicate or log it again anyway?`;
+
+  return {
+    replyText,
+    type: 'duplicate_warning',
+    parsed,
+    duplicateOf: duplicateTx,
+    actionButtons: [
+      {
+        label: `Log Anyway (${formatCurrency(parsed.amount)})`,
+        actionType: 'force_log_expense',
+        expensePayload: parsed
+      },
+      {
+        label: 'Skip Duplicate',
+        actionType: 'dismiss_notice',
+        query: ''
+      }
+    ],
+    suggestedChips: ['Recent expenses', 'Summary']
+  };
+}
+
+function handleLowConfidenceConfirm(parsed, formatCurrency) {
+  const reasonLine = parsed.confidenceReasons?.[0] || 'Needs category/amount confirmation';
+
+  if (parsed.isAmbiguous && Array.isArray(parsed.ambiguityOptions)) {
+    const optA = parsed.ambiguityOptions[0];
+    const optB = parsed.ambiguityOptions[1];
+    return {
+      replyText:
+        `*Confirm Quick Expense*\n` +
+        `Detected *${parsed.merchant}* (${reasonLine}). Which amount did you mean?`,
+      type: 'confirm_expense',
+      parsed,
+      actionButtons: [
+        {
+          label: optA.label,
+          actionType: 'confirm_parsed_expense',
+          expensePayload: { ...parsed, amount: optA.amount }
+        },
+        {
+          label: optB.label,
+          actionType: 'confirm_parsed_expense',
+          expensePayload: { ...parsed, amount: optB.amount }
+        }
+      ],
+      suggestedChips: ['Summary']
+    };
+  }
+
+  const replyText =
+    `*Confirm Expense Details*\n` +
+    `*Merchant:* ${parsed.merchant}\n` +
+    `*Amount:* ${formatCurrency(parsed.amount)}\n` +
+    `*Guessed Category:* ${parsed.category}\n` +
+    `*Mode:* ${parsed.paymentMode}${parsed.isModeExplicit ? '' : ' (defaulted)'}\n` +
+    `*Confidence:* ${parsed.confidence}% (${reasonLine})\n\n` +
+    `Please confirm or edit the details below before adding to your ledger.`;
+
+  return {
+    replyText,
+    type: 'confirm_expense',
+    parsed,
+    actionButtons: [
+      {
+        label: `Confirm & Log (${formatCurrency(parsed.amount)})`,
+        actionType: 'confirm_parsed_expense',
+        expensePayload: parsed
+      }
+    ],
+    suggestedChips: ['Summary']
+  };
+}
+
+async function handleMultiItemLogging(items, snapshot, formatCurrency, onSaveExpense, recentTransactions = [], forceLog = false) {
   let totalAdded = 0;
   const loggedList = [];
+  const savedIds = [];
 
   for (const item of items) {
+    if (!forceLog && findDuplicateTransaction(item, recentTransactions)) {
+      continue;
+    }
+    let saved = null;
     if (typeof onSaveExpense === 'function') {
-      await onSaveExpense({
+      saved = await onSaveExpense({
         amount: item.amount,
         description: item.merchant,
         category: item.category,
@@ -747,13 +1170,22 @@ async function handleMultiItemLogging(items, snapshot, formatCurrency, onSaveExp
         is_refund: item.type === 'income'
       });
     }
-    totalAdded += item.amount;
+    if (saved?.id) savedIds.push(saved.id);
+    totalAdded += item.type === 'income' ? -item.amount : item.amount;
     loggedList.push(`• *${item.merchant}*: ${formatCurrency(item.amount)} (${item.category})`);
+  }
+
+  if (loggedList.length === 0) {
+    return {
+      replyText: `*Batch Skipped — Duplicate Entries Detected*\nAll items in this batch were already logged today.`,
+      type: 'duplicate_warning',
+      suggestedChips: ['Recent expenses', 'Summary']
+    };
   }
 
   const newTotal = snapshot.totalSpent + totalAdded;
   const replyText =
-    `*Batch Expenses Recorded (${items.length} Items)*\n` +
+    `*Batch Expenses Recorded (${loggedList.length} Items)*\n` +
     `${loggedList.join('\n')}\n\n` +
     `*Total Batch Amount:* ${formatCurrency(totalAdded)}\n` +
     `*Updated Month Spent:* ${formatCurrency(newTotal)}`;
@@ -762,13 +1194,17 @@ async function handleMultiItemLogging(items, snapshot, formatCurrency, onSaveExp
     replyText,
     type: 'batch_logged',
     totalAdded,
-    count: items.length
+    count: loggedList.length,
+    savedIds,
+    items,
+    suggestedChips: ['Undo', 'Summary', "Today's Total"]
   };
 }
 
 async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSaveExpense) {
+  let savedTransaction = null;
   if (typeof onSaveExpense === 'function') {
-    await onSaveExpense({
+    savedTransaction = await onSaveExpense({
       amount: parsed.amount,
       description: parsed.merchant,
       category: parsed.category,
@@ -798,30 +1234,44 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
     replyText,
     type: 'expense_logged',
     parsed,
-    suggestedChips: ['Undo', 'Summary', 'Daily Pace'],
+    savedTransaction: savedTransaction || {
+      amount: parsed.amount,
+      description: parsed.merchant,
+      category: parsed.category,
+      payment_mode: parsed.paymentMode,
+      date: parsed.date,
+      is_refund: parsed.type === 'income'
+    },
+    suggestedChips: ['Undo', "Today's Total", 'Summary', 'Daily Pace'],
     actionButtons: [
-      { label: 'View Balance', query: 'Summary' },
-      { label: 'Undo', query: 'Undo' }
+      {
+        label: 'Edit Details',
+        actionType: 'inline_edit'
+      },
+      {
+        label: `Undo (${formatCurrency(parsed.amount)} ${parsed.merchant})`,
+        actionType: 'undo_tx',
+        targetTxId: savedTransaction?.id || null,
+        query: 'Undo'
+      }
     ]
   };
 }
 
 function handleFallbackResponse(text, snapshot, formatCurrency) {
   const replyText =
-    `*I'm here to help with your finances:*\n\n` +
-    `• \`50/30/20 rule\` (Personalized budget allocation)\n` +
-    `• \`Emergency fund\` (Reserve calculation & strategy)\n` +
-    `• \`How to pay off debt\` (Avalanche vs Snowball)\n` +
-    `• \`Can I afford 3500?\` (Affordability diagnosis)\n` +
-    `• \`Daily pace\` (Safe daily burn rate target)\n` +
-    `• \`Paisa kaise bachaye\` (Hinglish financial habits)\n` +
-    `• \`Chai 20\` or \`Lunch 150 upi\` (Record expense)\n` +
-    `• \`Split 1800 by 4\` (Calculate bill split)\n\n` +
+    `*I couldn't recognize an expense or command in that message — here is how I can help:*\n\n` +
+    `• \`Chai 20\` or \`chai pe 30 kharch kiya\` (Record expense)\n` +
+    `• \`50 chai, 1,200 lunch, 40 auto\` (Multi-item batch)\n` +
+    `• \`Split 2,400 among 6\` or \`Divide 2500 by 3\` (Smart bill split)\n` +
+    `• \`Can I afford 3500?\` (Affordability check)\n` +
+    `• \`50/30/20 rule\` • \`Emergency fund\` • \`Daily pace\`\n` +
+    `• \`Paisa kaise bachaye\` (Hinglish guidance)\n\n` +
     `*Current Status:* Safe pool remaining: *${formatCurrency(snapshot.remainingBudget)}* (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
 
   return {
     replyText,
     type: 'help_guidance',
-    suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Emergency Fund']
+    suggestedChips: ['Chai 20', 'Summary', 'Daily Pace', '50/30/20 Rule']
   };
 }

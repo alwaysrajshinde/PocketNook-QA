@@ -1,169 +1,206 @@
 /**
  * piiSanitizerService.js
- * PocketNook Zero-Leakage Privacy & PII Scrubbing Engine
- * 
- * Runs 100% locally on the user's device.
- * Strips all personal identifiable information (PII) and sensitive banking details:
- * - Bank account numbers (A/C XX1234, Acct ending in 4912)
- * - Credit / Debit card digits (**** 1234, card xx9911)
- * - UPI Transaction Reference / UTR / RRN numbers
- * - Phone numbers (Indian & International formats)
- * - Personal email addresses
- * - Indian Government ID formats (PAN, Aadhaar)
- * 
- * Guarantees that only sanitized category names, generic numbers, and generic prompts
- * are ever processed by conversational reasoning engines.
+ * PocketNook Privacy & Sensitive-Number Masking Engine
+ *
+ * Runs locally on the user's device before text reaches parsing/AI layers:
+ * - Masks UPI Transaction Reference / UTR / RRN numbers (run before phone/Aadhaar to avoid digit collisions)
+ * - Masks full 16-digit Card numbers and CVV/Card refs
+ * - Masks Bank Account numbers while optionally preserving last 4 digits (e.g. A/c **4912) for matching
+ * - Masks Indian & International Phone numbers (avoiding false positives on ₹/Rs currency amounts)
+ * - Masks Email addresses, PAN, and Aadhaar numbers
+ * - Caps raw input size to prevent ReDoS on oversized pastes
  */
 
-// Bank Account Number patterns
-const ACCOUNT_PATTERNS = [
-  /\b(?:a\/c|acct|account|acc)\s*(?:no\.?|number)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})?\s*(\d{3,18})\b/gi,
-  /\b(?:a\/c|acct|account)\s*(?:ending\s*(?:in|with)?)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})?\s*(\d{3,6})\b/gi,
-  /\b(?:x{2,}|[*]{2,})\s*(\d{3,6})\b/gi
-];
+export const MAX_SANITIZE_INPUT_CHARS = 4000;
 
-// Card numbers
-const CARD_PATTERNS = [
-  /\b(?:\d{4}[- ]){3}\d{4}\b/g, // 16 digit formatted card
-  /\bcard\s*(?:ending\s*(?:in|with)?)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})?\s*(\d{3,6})\b/gi,
-  /\b(?:debit|credit)\s*card\s*[:#-]?\s*(?:x{2,}|[*]{2,})?\s*(\d{3,6})\b/gi
-];
-
-// UPI Reference / UTR / RRN numbers (12-16 digits tracking codes)
+// 1. UPI Reference / UTR / RRN numbers (run FIRST so 12-digit UTRs never collide with Aadhaar/Phone)
 const UPI_REF_PATTERNS = [
-  /\b(?:upi\s*ref(?:erence)?(?:\s*no\.?)?|utr|rrn|txn\s*(?:id|ref)?)\s*[:#-]?\s*([a-z0-9]{8,24})\b/gi,
-  /\b(?:ref\s*(?:no\.?)?|reference\s*(?:no\.?)?)\s*[:#-]?\s*(\d{8,18})\b/gi
+  /\b(?:upi\s*ref(?:erence)?(?:\s*no\.?)?|utr|rrn|txn\s*(?:id|ref|no\.?)?|txnid)\s*[:#-]?\s*([a-z0-9]{6,26})\b/gi,
+  /\b(?:ref(?:erence)?\s*(?:no\.?|id|#)?)\s*[:#-]?\s*([a-z0-9]{6,22})\b/gi
 ];
 
-// Phone numbers
-const PHONE_PATTERNS = [
-  /(?:\+?91[\s-]?)?[6789]\d{9}\b/g, // Indian 10-digit mobile
-  /\b\+?[1-9]\d{0,2}[\s-]?(?:\(\d{1,4}\)|\d{1,4})[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g // International formats
-];
-
-// Email addresses
+// 2. Email addresses
 const EMAIL_PATTERN = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g;
 
-// PAN card (5 letters, 4 digits, 1 letter)
+// 3. PAN card (5 letters, 4 digits, 1 letter)
 const PAN_PATTERN = /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/gi;
 
-// Aadhaar card (12 digits with spaces or hyphens)
-const AADHAAR_PATTERN = /\b[2-9]{1}\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/g;
+// 4. Aadhaar card (12 digits with spaces/hyphens, or 12 raw digits prefixed by aadhaar/uid)
+const AADHAAR_PATTERNS = [
+  /\b(?:aadhaar|aadhar|uid)\s*(?:no\.?|number)?\s*[:#-]?\s*[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/gi,
+  /\b[2-9]\d{3}[\s-]\d{4}[\s-]\d{4}\b/g
+];
+
+// 5. Card numbers (full 16-digit PAN or explicit card ending refs)
+const CARD_PATTERNS = [
+  /\b(?:\d{4}[-\s]){3}\d{4}\b/g,
+  /\b(?:\d{16})\b/g,
+  /\b(?:(?:debit|credit)\s*)?card\s*(?:no\.?|number|ending(?:\s*(?:in|with))?)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})?\s*(\d{3,6})\b/gi
+];
+
+// 6. Bank Account Number patterns (preserve last 4 digits as **[last4] for safe matching)
+const ACCOUNT_FULL_PATTERN = /\b(a\/c|acct|account|acc)\s*(?:no\.?|number)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})?(\d{5,18})\b/gi;
+const ACCOUNT_LAST4_PATTERN = /\b(a\/c|acct|account|acc)\s*(?:no\.?|number|ending(?:\s*(?:in|with))?)?\s*[:#-]?\s*(?:x{2,}|[*]{2,})\s*(\d{4})\b/gi;
+
+// 7. Phone numbers (avoid false positives on currency figures or plain numbers)
+const LABELED_PHONE_PATTERN = /\b(?:ph|phone|mob|mobile|tel|call|helpline|contact|whatsapp)\s*(?:no\.?|number)?\s*[:#-]?\s*(\+?[\d\s()-]{8,16})/gi;
+const INDIAN_MOBILE_PATTERN = /(?<![₹.\d])(?:\+91[\s-]?|91[\s-]?)?([6-9]\d{9})(?!\.\d|\d)/g;
 
 /**
- * Sanitizes a raw text string, replacing all sensitive banking and personal tokens
- * with safe generic placeholders.
- * 
- * @param {string} rawText 
- * @returns {{ sanitizedText: string, wasSanitized: boolean, redactedTypes: string[] }}
+ * Sanitizes a raw text string, masking sensitive banking and personal tokens
+ * while preserving low-risk account last-4 suffixes (`A/c **4912`) for ledger matching.
+ *
+ * @param {string} rawText
+ * @returns {{ sanitizedText: string, wasSanitized: boolean, wasTruncated: boolean, redactedTypes: string[] }}
  */
 export function sanitizeFinancialText(rawText = '') {
   if (!rawText || typeof rawText !== 'string') {
-    return { sanitizedText: '', wasSanitized: false, redactedTypes: [] };
+    return { sanitizedText: '', wasSanitized: false, wasTruncated: false, redactedTypes: [] };
   }
 
+  let wasTruncated = false;
   let text = rawText;
+  if (text.length > MAX_SANITIZE_INPUT_CHARS) {
+    text = text.slice(0, MAX_SANITIZE_INPUT_CHARS);
+    wasTruncated = true;
+  }
+
+  // Strip executable HTML / script payloads before storage or display
+  if (/<[^>]+>/i.test(text)) {
+    text = text.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+               .replace(/<[^>]*>/g, ' ')
+               .replace(/\s{2,}/g, ' ')
+               .trim();
+  }
+
   const redactedTypes = new Set();
 
-  // 1. Scrub emails
+  // 1. Mask UPI / UTR / RRN References first so 12+ digit UTRs never collide with Aadhaar/Phone
+  UPI_REF_PATTERNS.forEach(pattern => {
+    text = text.replace(pattern, () => {
+      redactedTypes.add('transaction_ref');
+      return '[UPI_REF_MASKED]';
+    });
+  });
+
+  // 2. Mask emails
   if (EMAIL_PATTERN.test(text)) {
-    text = text.replace(EMAIL_PATTERN, '[EMAIL_REDACTED]');
+    text = text.replace(EMAIL_PATTERN, '[EMAIL_MASKED]');
     redactedTypes.add('email');
   }
 
-  // 2. Scrub PAN
+  // 3. Mask PAN
   if (PAN_PATTERN.test(text)) {
-    text = text.replace(PAN_PATTERN, '[PAN_REDACTED]');
+    text = text.replace(PAN_PATTERN, '[PAN_MASKED]');
     redactedTypes.add('pan');
   }
 
-  // 3. Scrub Aadhaar
-  if (AADHAAR_PATTERN.test(text)) {
-    text = text.replace(AADHAAR_PATTERN, '[AADHAAR_REDACTED]');
-    redactedTypes.add('aadhaar');
-  }
-
-  // 4. Scrub Card numbers
-  CARD_PATTERNS.forEach(pattern => {
-    if (pattern.test(text)) {
-      text = text.replace(pattern, '[CARD_REDACTED]');
-      redactedTypes.add('card');
-    }
-  });
-
-  // 5. Scrub Account numbers
-  ACCOUNT_PATTERNS.forEach(pattern => {
-    if (pattern.test(text)) {
-      text = text.replace(pattern, '[ACCOUNT_REDACTED]');
-      redactedTypes.add('bank_account');
-    }
-  });
-
-  // 6. Scrub UPI / UTR References
-  UPI_REF_PATTERNS.forEach(pattern => {
-    if (pattern.test(text)) {
-      text = text.replace(pattern, '[UPI_REF_REDACTED]');
-      redactedTypes.add('transaction_ref');
-    }
-  });
-
-  // 7. Scrub Phone numbers (make sure we don't accidentally match plain expense amounts like 500 or 1200)
-  PHONE_PATTERNS.forEach(pattern => {
-    // Only scrub if the match looks like an actual 10+ digit phone number
-    text = text.replace(pattern, (match) => {
-      const cleanDigits = match.replace(/\D/g, '');
-      if (cleanDigits.length >= 10 && cleanDigits.length <= 13) {
-        redactedTypes.add('phone');
-        return '[PHONE_REDACTED]';
-      }
-      return match;
+  // 4. Mask Aadhaar
+  AADHAAR_PATTERNS.forEach(pattern => {
+    text = text.replace(pattern, () => {
+      redactedTypes.add('aadhaar');
+      return '[AADHAAR_MASKED]';
     });
+  });
+
+  // 5. Mask Card numbers
+  CARD_PATTERNS.forEach(pattern => {
+    text = text.replace(pattern, () => {
+      redactedTypes.add('card');
+      return '[CARD_MASKED]';
+    });
+  });
+
+  // 6. Mask long bank account numbers while keeping low-risk last 4 digits (`A/c **4912`)
+  text = text.replace(ACCOUNT_FULL_PATTERN, (_match, label, digits) => {
+    redactedTypes.add('bank_account');
+    const last4 = digits.slice(-4);
+    return `${label} **${last4}`;
+  });
+  text = text.replace(ACCOUNT_LAST4_PATTERN, (_match, label, last4) => {
+    // Already masked to 4 digits; preserve safely for account reconciliation
+    return `${label} **${last4}`;
+  });
+
+  // 7. Mask Phone numbers safely (avoiding currency & decimal false positives)
+  text = text.replace(LABELED_PHONE_PATTERN, (fullMatch, numPart) => {
+    const cleanDigits = numPart.replace(/\D/g, '');
+    if (cleanDigits.length >= 7 && cleanDigits.length <= 15) {
+      redactedTypes.add('phone');
+      return fullMatch.replace(numPart, '[PHONE_MASKED]');
+    }
+    return fullMatch;
+  });
+
+  text = text.replace(INDIAN_MOBILE_PATTERN, (match, _digits, offset, sourceStr) => {
+    // Guard against preceding currency keywords like "Rs. 9876543210"
+    const prefix = sourceStr.slice(Math.max(0, offset - 8), offset);
+    if (/(?:rs\.?|inr|₹)\s*$/i.test(prefix)) {
+      return match;
+    }
+    redactedTypes.add('phone');
+    return '[PHONE_MASKED]';
   });
 
   return {
     sanitizedText: text,
     wasSanitized: redactedTypes.size > 0,
+    wasTruncated,
     redactedTypes: Array.from(redactedTypes)
   };
 }
 
 /**
- * Prepares an anonymized financial context vector safe for conversational reasoning.
- * Strips personal names, specific account IDs, or private notes.
- * 
+ * Prepares an anonymized financial context snapshot for reasoning.
+ * Strips raw merchant PII and computes remaining days, burn pace, and upcoming commitments.
+ *
  * @param {Object} options
  * @param {Object} options.dashboardData
  * @param {Array} options.recentTransactions
+ * @param {number} options.upcomingRecurringTotal
+ * @param {number} options.committedSavings
  * @returns {Object} Sanitized financial snapshot
  */
-export function prepareSafeFinancialSnapshot({ dashboardData = {}, recentTransactions = [] } = {}) {
+export function prepareSafeFinancialSnapshot({
+  dashboardData = {},
+  recentTransactions = [],
+  upcomingRecurringTotal = 0,
+  committedSavings = 0
+} = {}) {
   const budget = Number(dashboardData?.budget || 0);
   const totalSpent = Number(dashboardData?.total_spent || 0);
   const remainingBudget = Number(dashboardData?.remaining_budget || 0);
   const todaySpent = Number(dashboardData?.today_spent || 0);
   const percentSpent = budget > 0 ? Math.round((totalSpent / budget) * 100) : 0;
 
-  // Days left in current month calculation
+  // Days left in current month (inclusive of today when on final day)
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const currentDay = now.getDate();
-  const daysRemaining = Math.max(1, daysInMonth - currentDay);
-  const safeDailyPace = remainingBudget > 0 ? Math.round(remainingBudget / daysRemaining) : 0;
+  const isLastDayOfMonth = currentDay >= daysInMonth;
+  const daysRemaining = Math.max(1, daysInMonth - currentDay + 1);
 
-  // Category summary (only category name, amount, and percent - zero PII)
+  const recurringCommitments = Math.max(0, Number(upcomingRecurringTotal || 0));
+  const savingsCommitments = Math.max(0, Number(committedSavings || 0));
+  const totalUpcomingCommitted = recurringCommitments + savingsCommitments;
+  const freeSafePool = remainingBudget - totalUpcomingCommitted;
+  const safeDailyPace = freeSafePool > 0
+    ? Math.round(freeSafePool / daysRemaining)
+    : (remainingBudget > 0 ? Math.round(remainingBudget / daysRemaining) : 0);
+
+  // Category summary
   const categoryBreakdown = (dashboardData?.category_breakdown || []).map(c => ({
     category: c.name || c.category || 'General',
     spent: Number(c.spent || 0),
     percent: Math.round(Number(c.percent || 0))
   })).sort((a, b) => b.spent - a.spent);
 
-  // Top spending category
   const topCategory = categoryBreakdown[0] || null;
 
-  // Recent transactions: scrub any raw merchant notes
-  const safeTransactions = (recentTransactions || []).slice(0, 10).map(tx => {
+  // Recent transactions: mask any sensitive tokens in merchant notes
+  const safeTransactions = (recentTransactions || []).slice(0, 20).map(tx => {
     const { sanitizedText } = sanitizeFinancialText(tx.description || tx.merchant || 'Expense');
     return {
       id: tx.id,
@@ -172,6 +209,7 @@ export function prepareSafeFinancialSnapshot({ dashboardData = {}, recentTransac
       merchant: sanitizedText,
       paymentMode: tx.payment_mode || 'UPI',
       date: tx.date || new Date().toISOString().slice(0, 10),
+      createdAt: tx.created_at || tx.updated_at || null,
       isRefund: Boolean(tx.is_refund)
     };
   });
@@ -180,13 +218,19 @@ export function prepareSafeFinancialSnapshot({ dashboardData = {}, recentTransac
     budget,
     totalSpent,
     remainingBudget,
+    freeSafePool,
+    recurringCommitments,
+    savingsCommitments,
+    totalUpcomingCommitted,
     todaySpent,
     percentSpent,
     daysRemaining,
+    isLastDayOfMonth,
     safeDailyPace,
     categoryBreakdown,
     topCategory,
     safeTransactions,
+    hasBudgetConfigured: budget > 0,
     isOverBudget: remainingBudget < 0
   };
 }

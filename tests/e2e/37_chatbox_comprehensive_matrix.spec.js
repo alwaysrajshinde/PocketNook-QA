@@ -36,6 +36,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
       await fab.click({ force: true });
     }
     await expect(modal).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(320); // Wait for 250ms slide-up / scale entrance animation to settle
     return modal;
   }
 
@@ -339,7 +340,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     // Verify polite helpful guidance instead of crash or error
-    await expect(modal.locator('text=I\'m here to help with your finances:').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=couldn\'t recognize an expense or command').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('text=50/30/20 rule').first()).toBeVisible();
 
     await modal.locator('button[aria-label="Back"]').click();
@@ -349,11 +350,11 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
      MODULE 3: EDGE & SECURITY SCENARIOS
      ======================================================== */
 
-  test('37.20 [Security & PII]: Bank SMS alert with sensitive PII tokens scrubbed on-device', async ({ page }) => {
+  test('37.20 [Security & PII]: Bank SMS alert masks card/UTR/phone on-device while preserving safe A/c last-4', async ({ page }) => {
     const modal = await openChatbox(page);
 
-    // Verify Bank-Grade Zero Leakage badge
-    await expect(modal.locator('text=Bank-Grade Zero Leakage').first()).toBeVisible();
+    // Verify honest privacy notice badge
+    await expect(modal.locator('text=Privacy-first: sensitive numbers masked').first()).toBeVisible();
 
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sensitiveSms = 'Alert: Rs.850.00 debited from HDFC Bank A/c **4912 on 25-NOV-26 to SWIGGY. Card ending 4412. UTR: 2948104819. Avl bal: Rs.14,250.00. Help: 9876543210.';
@@ -364,9 +365,15 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('text=SWIGGY').first()).toBeVisible();
 
-    // Verify sensitive card number and bank account number are NOT reflected in bot text
+    // Verify sensitive tokens are masked in stored user bubble too (not cosmetic)
+    const userText = await modal.locator('[data-testid="whatsapp-bubble-user"]').last().innerText();
+    expect(userText).not.toContain('4412');
+    expect(userText).not.toContain('2948104819');
+    expect(userText).not.toContain('9876543210');
+    expect(userText).toContain('**4912');
+
+    // Verify sensitive card, UTR, and phone are NOT reflected in bot text
     const botText = await modal.locator('[data-testid="whatsapp-bubble-bot"]').last().innerText();
-    expect(botText).not.toContain('4912');
     expect(botText).not.toContain('4412');
     expect(botText).not.toContain('2948104819');
     expect(botText).not.toContain('9876543210');
@@ -433,7 +440,141 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
 
     // Verify messages reset to cleared notice
     await expect(modal.locator('text=Session persistence check 999')).not.toBeVisible();
-    await expect(modal.locator('text=Chat history cleared!').or(modal.locator('text=PocketNook Copilot Active')).first()).toBeVisible();
+    await expect(modal.locator('text=Chat history cleared!').or(modal.locator('text=PocketNook Chat Active')).first()).toBeVisible();
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  /* ========================================================
+     MODULE 4: P0 & P1 REVIEW FIX VERIFICATION MATRIX
+     ======================================================== */
+
+  test('37.24 [P0 Parser]: Indian comma amounts, k/lakh, relative dates, and Hinglish expenses', async ({ page }) => {
+    const modal = await openChatbox(page);
+    const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
+    const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
+
+    // 1. Multi-item with Indian comma amount ("1,200 lunch" must NOT split at the comma!)
+    await chatInput.fill('50 chai, 1,200 lunch, 40 auto');
+    await sendBtn.click();
+    await expect(modal.locator('text=Batch Expenses Recorded (3 Items)').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=₹1,290').first()).toBeVisible();
+
+    // 2. Hinglish expense shorthand ("chai pe 30 kharch kiya")
+    await chatInput.fill('chai pe 30 kharch kiya');
+    await sendBtn.click();
+    await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=₹30').first()).toBeVisible();
+
+    // 3. Relative date + suffix currency + k notation ("Uber 1.5k yesterday")
+    await chatInput.fill('Uber 1.5k yesterday');
+    await sendBtn.click();
+    await expect(modal.locator('text=₹1,500').first()).toBeVisible({ timeout: 10000 });
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  test('37.25 [P0 Split & Idempotency]: Remainder rounding, friends phrasing, and double-tap protection', async ({ page }) => {
+    const modal = await openChatbox(page);
+    const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
+    const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
+
+    // 1. Remainder-preserving split: Divide 2500 by 3 -> 1 x ₹834 + 2 x ₹833
+    await chatInput.fill('Divide 2500 by 3');
+    await sendBtn.click();
+    await expect(modal.locator('text=Smart Bill Split Calculation').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=₹834').first()).toBeVisible();
+    await expect(modal.locator('text=₹833').first()).toBeVisible();
+
+    // 2. Friends phrasing note & idempotent 1-tap share button
+    await chatInput.fill('Split 1,800 with 4 friends');
+    await sendBtn.click();
+    await expect(modal.locator('button:has-text("Split 5 Ways (Incl. You)")').first()).toBeVisible({ timeout: 10000 });
+
+    const shareBtn = modal.locator('[data-testid="log-my-share-btn"]').last();
+    await expect(shareBtn).toBeVisible();
+    await shareBtn.click();
+
+    // Button transitions to idempotent "Logged ✓ · Undo"
+    await expect(modal.locator('[data-testid="logged-undo-btn"]').first()).toBeVisible({ timeout: 10000 });
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  test('37.26 [P0 Affordability]: Continuous 75%-100% Tight Squeeze bracket coverage', async ({ page }) => {
+    const modal = await openChatbox(page);
+
+    // Read current Remaining balance from HUD so 85% falls deterministically inside the 75%-100% bracket
+    const hudRemainingText = await modal.locator('span.font-mono').first().innerText();
+    const numericRemaining = parseInt(hudRemainingText.replace(/[^\d-]/g, ''), 10) || 12000;
+    const tightAmount = Math.max(100, Math.round(numericRemaining * 0.85));
+
+    const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
+    await chatInput.fill(`Can I afford ${tightAmount} phone?`);
+    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
+
+    await expect(modal.locator('text=Affordability Financial Diagnosis').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=Tight Squeeze (75%–100% of Free Pool)').first()).toBeVisible();
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  test('37.27 [P0 Confidence & Duplicate]: Quantity ambiguity confirmation & duplicate SMS guard', async ({ page }) => {
+    const modal = await openChatbox(page);
+    const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
+    const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
+
+    // 1. Ambiguous quantity + price: "2 chai 40" -> must NOT silently log; shows Confirm card
+    await chatInput.fill('2 chai 40');
+    await sendBtn.click();
+    await expect(modal.locator('text=Confirm Quick Expense').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('button:has-text("Total ₹40")').first()).toBeVisible();
+
+    // 2. Duplicate detection: Log a unique lunch amount, then send the exact same item again
+    const dupAmt = 100 + Math.floor((Date.now() / 100) % 750);
+    await chatInput.fill(`Lunch ${dupAmt}`);
+    await sendBtn.click();
+    await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
+
+    await chatInput.fill(`Lunch ${dupAmt}`);
+    await sendBtn.click();
+    await expect(modal.locator('text=Possible Duplicate Detected').first()).toBeVisible({ timeout: 10000 });
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  test('37.28 [P1 UX & Storage]: Onboarding pills, inline edit + category learning, IndexedDB & 50k cap', async ({ page }) => {
+    const modal = await openChatbox(page);
+
+    // 1. Onboarding tappable example pill on initial welcome card ("split 1200 between 4")
+    const exampleBtn = modal.locator('[data-testid="onboarding-example-ex_split"]').first();
+    await expect(exampleBtn).toBeVisible();
+    await exampleBtn.click();
+    await expect(modal.locator('text=Smart Bill Split Calculation').first()).toBeVisible({ timeout: 10000 });
+
+    // 2. Log unique expense -> Inline Edit + Merchant Category Learning
+    const uniqAmt = 200 + Math.floor((Date.now() / 100) % 700);
+    await modal.locator('[data-testid="whatsapp-chat-input"]').fill(`Starbucks ${uniqAmt}`);
+    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
+    await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
+
+    const editBtn = modal.locator('button:has-text("Edit Details")').first();
+    await expect(editBtn).toBeVisible();
+    await editBtn.click();
+    await modal.locator('[data-testid="inline-edit-category"]').selectOption('Entertainment');
+    await modal.locator('[data-testid="inline-edit-save-btn"]').click();
+    await expect(modal.locator('text=Learned:').first()).toBeVisible({ timeout: 10000 });
+
+    // 3. Verify plaintext legacy localStorage chat key is NOT used
+    const legacyRaw = await page.evaluate(() => localStorage.getItem('expense_tracker_whatsapp_chat'));
+    expect(legacyRaw).toBeNull();
+
+    // 4. 50,000-char large paste boundary resilience (no UI freeze)
+    const hugePaste = 'Spending advice budget '.repeat(2200);
+    expect(hugePaste.length).toBeGreaterThan(45000);
+    await modal.locator('[data-testid="whatsapp-chat-input"]').fill(hugePaste);
+    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
+    await expect(modal.locator('text=Input was capped at').first()).toBeVisible({ timeout: 10000 });
 
     await modal.locator('button[aria-label="Back"]').click();
   });

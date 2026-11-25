@@ -539,7 +539,7 @@ function getDashboardData(monthKey, userId = 1) {
 
   // Recent transactions for THIS user only (limit 5)
   const recentRaw = db.prepare(`
-    SELECT id, date, description, category, payment_mode, amount, is_refund
+    SELECT id, date, description, category, payment_mode, amount, is_refund, created_at, updated_at
     FROM transactions
     WHERE month_key = ? AND user_id = ?
     ORDER BY date DESC, id DESC

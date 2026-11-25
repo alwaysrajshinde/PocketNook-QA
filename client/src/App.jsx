@@ -464,12 +464,13 @@ function MainApp() {
   };
 
   const handleSaveTransaction = async (data) => {
+    let savedTx = null;
     try {
       if (data.id) {
-        await api.updateTransaction(data.id, data);
+        savedTx = await api.updateTransaction(data.id, data);
         showToast('Expense updated successfully!', 'success');
       } else {
-        await api.createTransaction(data);
+        savedTx = await api.createTransaction(data);
         showToast('Expense added successfully!', 'success');
       }
     } catch (err) {
@@ -477,6 +478,7 @@ function MainApp() {
       showToast('Saved offline. Will synchronize when online.', 'info');
     }
     handleRefreshAll();
+    return savedTx || data;
   };
 
   const handleDeleteTransaction = async (id) => {
@@ -1029,27 +1031,27 @@ function MainApp() {
         />
       )}
 
-      {/* Feature 5: Floating WhatsApp Expense Assistant Button */}
+      {/* Feature 5: Floating PocketNook Chat Assistant Button */}
       <button
         type="button"
         onClick={() => setIsWhatsAppChatOpen(true)}
         data-testid="floating-whatsapp-btn"
-        aria-label="Open WhatsApp Expense Assistant"
-        title="Open WhatsApp Expense Assistant"
+        aria-label="Open PocketNook Chat Assistant"
+        title="Open PocketNook Chat Assistant"
         className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-[#5B27DC] via-[#6C47FF] to-[#7B42F6] hover:from-[#4E1FC5] hover:to-[#6E32E9] text-white flex items-center justify-center shadow-xl shadow-purple-600/35 active:scale-95 transition-all cursor-pointer group ring-4 ring-purple-500/20"
       >
         <div className="relative">
           <Sparkles size={24} strokeWidth={2.2} className="text-white" />
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-[#6C47FF] animate-ping" />
+            <span className="w-2 h-2 rounded-full bg-[#6C47FF] motion-safe:animate-ping" />
           </span>
         </div>
         <span className="absolute right-full mr-2.5 px-3 py-1.5 rounded-xl bg-[#16132A] text-white text-[11px] font-black tracking-wide whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl border border-white/10 hidden sm:block">
-          PocketNook Copilot
+          PocketNook Chat
         </span>
       </button>
 
-      {/* Feature 5: WhatsApp Chatbox Assistant Modal */}
+      {/* Feature 5: PocketNook Chat Assistant Modal */}
       <WhatsAppChatboxModal
         isOpen={isWhatsAppChatOpen}
         onClose={() => setIsWhatsAppChatOpen(false)}
@@ -1059,6 +1061,7 @@ function MainApp() {
         recentTransactions={dashboardData?.recent_transactions || []}
         formatCurrency={formatCurrency}
         categories={categories}
+        userId={user?.uid || user?.email || 'guest'}
       />
 
       {/* Feature 1: SMS & UPI Smart Parser Modal */}

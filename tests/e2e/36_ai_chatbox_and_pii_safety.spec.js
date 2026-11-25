@@ -27,12 +27,12 @@ test.describe('Area 36: Full AI Financial Copilot & Zero-Leakage PII Safety', ()
     await expect(fab).toBeVisible();
     await fab.click();
 
-    // Verify Copilot header and Zero-Leakage badge
+    // Verify Copilot header and privacy badge
     const modal = page.locator('[data-testid="whatsapp-chatbox-modal"]');
     await expect(modal).toBeVisible();
     await expect(modal.locator('h3:has-text("PocketNook")').first()).toBeVisible();
-    await expect(modal.locator('text=Zero-Leakage AI').first()).toBeVisible();
-    await expect(modal.locator('text=Bank-Grade Zero Leakage').first()).toBeVisible();
+    await expect(modal.locator('text=Privacy-First').first()).toBeVisible();
+    await expect(modal.locator('text=Privacy-first: sensitive numbers masked').first()).toBeVisible();
 
     // Close modal
     await modal.locator('button[aria-label="Back"]').click();

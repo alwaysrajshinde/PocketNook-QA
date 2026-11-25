@@ -1,18 +1,18 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const routes = require('./routes');
+const { isOriginAllowed } = require('../functions/chatCore/authMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Security Headers
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
-});
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false, // Keep compatibility with inline Vite / Firebase script configs in local dev
+  crossOriginEmbedderPolicy: false
+}));
 
 // In-Memory Rate Limiter for API protection
 const ipRateLimitMap = new Map();
@@ -46,7 +46,14 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Firebase-AppCheck', 'x-user-email', 'x-user-name', 'x-google-sub']
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 

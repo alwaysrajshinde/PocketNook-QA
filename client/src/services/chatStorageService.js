@@ -150,7 +150,7 @@ export async function clearChatHistoryStorage(userId) {
 }
 
 /**
- * Loads user personalization preferences (learned merchant -> category mappings & budget allocation ratios)
+ * Loads user personalization preferences (learned merchant -> category mappings, budget ratios, and AI consent)
  */
 export async function loadCopilotPreferences(userId) {
   const uid = normalizeUserId(userId);
@@ -158,8 +158,24 @@ export async function loadCopilotPreferences(userId) {
   return {
     userId: uid,
     learnedCategories: record?.learnedCategories || {},
-    budgetRatios: record?.budgetRatios || { needs: 50, wants: 30, savings: 20 }
+    budgetRatios: record?.budgetRatios || { needs: 50, wants: 30, savings: 20 },
+    aiDataConsent: Boolean(record?.aiDataConsent) // Default OFF per privacy requirement
   };
+}
+
+/**
+ * Updates "Use AI with my data" consent toggle in IndexedDB preferences
+ */
+export async function saveAiDataConsent(userId, enabled) {
+  const uid = normalizeUserId(userId);
+  const prefs = await loadCopilotPreferences(uid);
+  const updated = {
+    ...prefs,
+    aiDataConsent: Boolean(enabled),
+    updatedAt: new Date().toISOString()
+  };
+  await idbPut(STORE_PREFERENCES, updated);
+  return updated;
 }
 
 /**

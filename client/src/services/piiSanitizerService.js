@@ -25,10 +25,10 @@ const EMAIL_PATTERN = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g;
 // 3. PAN card (5 letters, 4 digits, 1 letter)
 const PAN_PATTERN = /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/gi;
 
-// 4. Aadhaar card (12 digits with spaces/hyphens, or 12 raw digits prefixed by aadhaar/uid)
+// 4. Aadhaar card (12 digits with spaces/hyphens, or 12 raw digits prefixed by aadhaar/uid; negative lookahead avoids 16-digit card prefix match)
 const AADHAAR_PATTERNS = [
-  /\b(?:aadhaar|aadhar|uid)\s*(?:no\.?|number)?\s*[:#-]?\s*[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/gi,
-  /\b[2-9]\d{3}[\s-]\d{4}[\s-]\d{4}\b/g
+  /\b(?:aadhaar|aadhar|uid)\s*(?:no\.?|number)?\s*[:#-]?\s*[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?!\d)\b/gi,
+  /\b[2-9]\d{3}[\s-]\d{4}[\s-]\d{4}(?![\s-]?\d)\b/g
 ];
 
 // 5. Card numbers (full 16-digit PAN or explicit card ending refs)
@@ -95,19 +95,19 @@ export function sanitizeFinancialText(rawText = '') {
     redactedTypes.add('pan');
   }
 
-  // 4. Mask Aadhaar
-  AADHAAR_PATTERNS.forEach(pattern => {
-    text = text.replace(pattern, () => {
-      redactedTypes.add('aadhaar');
-      return '[AADHAAR_MASKED]';
-    });
-  });
-
-  // 5. Mask Card numbers
+  // 4. Mask Card numbers BEFORE Aadhaar so 16-digit cards are never partially masked as Aadhaar
   CARD_PATTERNS.forEach(pattern => {
     text = text.replace(pattern, () => {
       redactedTypes.add('card');
       return '[CARD_MASKED]';
+    });
+  });
+
+  // 5. Mask Aadhaar
+  AADHAAR_PATTERNS.forEach(pattern => {
+    text = text.replace(pattern, () => {
+      redactedTypes.add('aadhaar');
+      return '[AADHAAR_MASKED]';
     });
   });
 

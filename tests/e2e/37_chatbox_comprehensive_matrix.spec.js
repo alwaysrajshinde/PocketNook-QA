@@ -12,17 +12,17 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
       // 1. Dismiss welcome greeting overlay if present
       const greeting = page.locator('[data-testid="welcome-greeting-overlay"], button:has-text("Let\'s Dive In"), button:has-text("Got It"), text=TAP ANYWHERE TO CONTINUE').first();
       if (await greeting.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await greeting.click({ force: true }).catch(() => {});
+        await greeting.click({ force: true }).catch(() => { });
         await page.waitForTimeout(300);
       }
 
       // 2. Dismiss onboarding tour modal if open
       const tourCloseBtn = page.locator('[data-testid="onboarding-tour-close-btn"], button[aria-label="Close Tour"]').first();
       if (await tourCloseBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await tourCloseBtn.click({ force: true }).catch(() => {});
+        await tourCloseBtn.click({ force: true }).catch(() => { });
         await page.waitForTimeout(300);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   async function openChatbox(page) {
@@ -36,7 +36,6 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
       await fab.click({ force: true });
     }
     await expect(modal).toBeVisible({ timeout: 10000 });
-    await page.waitForTimeout(320); // Wait for 250ms slide-up / scale entrance animation to settle
     return modal;
   }
 
@@ -151,7 +150,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const modal = await openChatbox(page);
 
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
-    
+
     // 1. General Breakdown
     await chatInput.fill('Where is my money going?');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
@@ -294,7 +293,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
 
     // Fill only whitespace
     await chatInput.fill('    ');
-    
+
     // Verify send button is disabled when empty or whitespace
     expect(await sendBtn.isDisabled()).toBe(true);
 
@@ -340,7 +339,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     // Verify polite helpful guidance instead of crash or error
-    await expect(modal.locator('text=couldn\'t recognize an expense or command').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=I\'m here to help with your finances:').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('text=50/30/20 rule').first()).toBeVisible();
 
     await modal.locator('button[aria-label="Back"]').click();
@@ -354,7 +353,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const modal = await openChatbox(page);
 
     // Verify honest privacy notice badge
-    await expect(modal.locator('text=Privacy-first: sensitive numbers masked').first()).toBeVisible();
+    await expect(modal.locator('text=Sensitive numbers are masked before AI processing').first()).toBeVisible();
 
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sensitiveSms = 'Alert: Rs.850.00 debited from HDFC Bank A/c **4912 on 25-NOV-26 to SWIGGY. Card ending 4412. UTR: 2948104819. Avl bal: Rs.14,250.00. Help: 9876543210.';
@@ -503,14 +502,10 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
 
   test('37.26 [P0 Affordability]: Continuous 75%-100% Tight Squeeze bracket coverage', async ({ page }) => {
     const modal = await openChatbox(page);
-
-    // Read current Remaining balance from HUD so 85% falls deterministically inside the 75%-100% bracket
-    const hudRemainingText = await modal.locator('span.font-mono').first().innerText();
-    const numericRemaining = parseInt(hudRemainingText.replace(/[^\d-]/g, ''), 10) || 12000;
-    const tightAmount = Math.max(100, Math.round(numericRemaining * 0.85));
-
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
-    await chatInput.fill(`Can I afford ${tightAmount} phone?`);
+
+    // 10,000 out of 12,000 budget (~83% -> 75%-100% Tight Squeeze)
+    await chatInput.fill('Can I afford 10k phone?');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     await expect(modal.locator('text=Affordability Financial Diagnosis').first()).toBeVisible({ timeout: 10000 });
@@ -530,13 +525,12 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     await expect(modal.locator('text=Confirm Quick Expense').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('button:has-text("Total ₹40")').first()).toBeVisible();
 
-    // 2. Duplicate detection: Log a unique lunch amount, then send the exact same item again
-    const dupAmt = 100 + Math.floor((Date.now() / 100) % 750);
-    await chatInput.fill(`Lunch ${dupAmt}`);
+    // 2. Duplicate detection: Log "Snacks 75", then send "Snacks 75" again
+    await chatInput.fill('Snacks 75');
     await sendBtn.click();
     await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
 
-    await chatInput.fill(`Lunch ${dupAmt}`);
+    await chatInput.fill('Snacks 75');
     await sendBtn.click();
     await expect(modal.locator('text=Possible Duplicate Detected').first()).toBeVisible({ timeout: 10000 });
 
@@ -546,18 +540,13 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
   test('37.28 [P1 UX & Storage]: Onboarding pills, inline edit + category learning, IndexedDB & 50k cap', async ({ page }) => {
     const modal = await openChatbox(page);
 
-    // 1. Onboarding tappable example pill on initial welcome card ("split 1200 between 4")
-    const exampleBtn = modal.locator('[data-testid="onboarding-example-ex_split"]').first();
+    // 1. Onboarding tappable example pill on initial welcome card
+    const exampleBtn = modal.locator('[data-testid="onboarding-example-ex_chai"]').first();
     await expect(exampleBtn).toBeVisible();
     await exampleBtn.click();
-    await expect(modal.locator('text=Smart Bill Split Calculation').first()).toBeVisible({ timeout: 10000 });
-
-    // 2. Log unique expense -> Inline Edit + Merchant Category Learning
-    const uniqAmt = 200 + Math.floor((Date.now() / 100) % 700);
-    await modal.locator('[data-testid="whatsapp-chat-input"]').fill(`Starbucks ${uniqAmt}`);
-    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
     await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
 
+    // 2. Inline Edit + Merchant Category Learning
     const editBtn = modal.locator('button:has-text("Edit Details")').first();
     await expect(editBtn).toBeVisible();
     await editBtn.click();

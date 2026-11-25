@@ -379,10 +379,12 @@ function MainApp() {
         ? String(sett.monthly_budget) 
         : (isRaj ? '12000' : '12000');
       const updatedSettings = {
+        ...sett,
         monthly_budget: rawBudget,
         currency: sett.currency || '₹',
         user_name: user?.name || sett.user_name || (user?.email ? user.email.split('@')[0] : 'User'),
-        user_email: user?.email || sett.user_email || ''
+        user_email: user?.email || sett.user_email || '',
+        ai_data_consent: sett.ai_data_consent === 'true' ? 'true' : 'false'
       };
       setSettings(updatedSettings);
 
@@ -1057,6 +1059,19 @@ function MainApp() {
         onClose={() => setIsWhatsAppChatOpen(false)}
         onSaveExpense={handleSaveTransaction}
         onDeleteExpense={handleDeleteTransaction}
+        onSetBudget={async (newBudgetAmt) => {
+          await api.updateBudget(selectedMonth, newBudgetAmt);
+          handleRefreshAll();
+        }}
+        aiDataConsent={settings?.ai_data_consent === 'true'}
+        onToggleAiConsent={async (enabled) => {
+          const val = enabled ? 'true' : 'false';
+          setSettings(prev => ({ ...prev, ai_data_consent: val }));
+          try {
+            await api.updateSettings({ ai_data_consent: val });
+          } catch (e) {}
+          handleRefreshAll();
+        }}
         dashboardData={dashboardData}
         recentTransactions={dashboardData?.recent_transactions || []}
         formatCurrency={formatCurrency}

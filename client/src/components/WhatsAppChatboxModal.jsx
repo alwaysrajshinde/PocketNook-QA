@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import {
   X, Send, CheckCheck, Mic, Sparkles,
   Trash2, ArrowLeft, ShieldCheck, Scale, Users,
   Activity, ArrowUpRight, Edit3, Check, AlertTriangle,
-  CheckCircle2, RotateCcw
+  CheckCircle2, RotateCcw, Square
 } from 'lucide-react';
-import { processAssistantMessage, computeProactiveNudges } from '../services/aiAssistantService';
+import {
+  processAssistantMessage,
+  computeProactiveNudges,
+  canHandleLocally,
+  findDuplicateTransaction
+} from '../services/aiAssistantService';
 import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from '../services/piiSanitizerService';
+import { buildSafeChatContext, buildSanitizedConversationMemory } from '../services/chatContextService';
 import {
   loadChatHistory,
   saveChatHistory,
@@ -14,9 +21,18 @@ import {
   loadCopilotPreferences,
   learnMerchantCategory,
   saveBudgetRatios,
+  saveAiDataConsent,
   recordCopilotMetric
 } from '../services/chatStorageService';
+import { useChatStream } from '../hooks/useChatStream';
 import { useToast } from '../context/ToastContext';
+
+function sanitizeRenderedLlmText(raw = '') {
+  // Strip links to unknown domains and sanitize any HTML via DOMPurify before display
+  const noUnknownLinks = String(raw || '').replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '$1');
+  const cleaned = DOMPurify.sanitize(noUnknownLinks, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  return cleaned;
+}
 
 const DEFAULT_CATEGORIES = [
   'Food & Dining', 'Groceries', 'Transportation', 'Shopping',
@@ -346,8 +362,9 @@ function formatBotMessage(text, msg = {}, onTriggerEdit = null) {
   // 4. TAPPABLE EXPENSE LOGGED SUMMARY FOOTER HINT
   const isTappableLoggedCard = msg?.type === 'expense_logged' && msg?.savedTransaction && typeof onTriggerEdit === 'function';
 
-  // 5. EDITORIAL TYPOGRAPHY FORMATTER
-  const lines = text.split('\n');
+  // 5. EDITORIAL TYPOGRAPHY FORMATTER (DOMPurify sanitized against XSS & rogue links)
+  const safeBody = sanitizeRenderedLlmText(text);
+  const lines = safeBody.split('\n');
   const renderedLines = lines.map((line, lIdx) => {
     if (/^[━─—–=-]{5,}$/.test(line.trim())) {
       return <div key={lIdx} className="my-2 h-[1px] bg-slate-200/80 dark:bg-white/[0.08]" />;
@@ -439,6 +456,9 @@ export default function WhatsAppChatboxModal({
   onClose,
   onSaveExpense,
   onDeleteExpense,
+  onSetBudget,
+  aiDataConsent: externalAiConsent,
+  onToggleAiConsent,
   dashboardData,
   recentTransactions = [],
   formatCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`,
@@ -446,8 +466,9 @@ export default function WhatsAppChatboxModal({
   userId = 'guest'
 }) {
   const { showToast } = useToast();
+  const { isStreaming, streamChat, stopGenerating, clearServerSession } = useChatStream();
   const [messages, setMessages] = useState(createWelcomeMessages);
-  const [prefs, setPrefs] = useState({ learnedCategories: {}, budgetRatios: { needs: 50, wants: 30, savings: 20 } });
+  const [prefs, setPrefs] = useState({ learnedCategories: {}, budgetRatios: { needs: 50, wants: 30, savings: 20 }, aiDataConsent: false });
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -463,10 +484,26 @@ export default function WhatsAppChatboxModal({
   const previousFocusRef = useRef(null);
   const speechRecognitionRef = useRef(null);
   const pendingActionIdsRef = useRef(new Set());
+  const executedRequestIdsRef = useRef(new Set());
   const touchStartYRef = useRef(null);
   const lastLoggedBatchRef = useRef(null);
   const recentSessionLogsRef = useRef([]);
   const openedAtRef = useRef(Date.now());
+
+  const effectiveAiConsent = externalAiConsent !== undefined ? Boolean(externalAiConsent) : Boolean(prefs.aiDataConsent);
+
+  const handleToggleConsentInChat = async () => {
+    const next = !effectiveAiConsent;
+    const updated = await saveAiDataConsent(userId, next);
+    if (updated) setPrefs(updated);
+    if (typeof onToggleAiConsent === 'function') {
+      await onToggleAiConsent(next);
+    }
+    showToast(
+      next ? 'AI spending summary sharing enabled (masked PII).' : 'AI data sharing turned OFF.',
+      'info'
+    );
+  };
 
   const categoryOptions = useMemo(() => {
     const customNames = (categories || []).map(c => (typeof c === 'string' ? c : c?.name)).filter(Boolean);
@@ -648,6 +685,99 @@ export default function WhatsAppChatboxModal({
     }
   }, [onClose]);
 
+  /**
+   * Executes a validated LLM tool call safely (either auto-logging low-value high-confidence items or confirming user tap).
+   */
+  const executeValidatedToolCall = async (tool, { forceConfirmed = false } = {}) => {
+    const reqId = tool.requestId || `tool_${Date.now()}`;
+    if (executedRequestIdsRef.current.has(reqId)) {
+      return { skippedDuplicateRequest: true };
+    }
+
+    const mergedRecentTxs = [...recentSessionLogsRef.current, ...(recentTransactions || [])];
+
+    if (tool.name === 'log_expense') {
+      const a = tool.args;
+      if (!forceConfirmed && findDuplicateTransaction({ amount: a.amount, merchant: a.merchant, date: a.date }, mergedRecentTxs)) {
+        return { duplicateDetected: true };
+      }
+      executedRequestIdsRef.current.add(reqId);
+      const payload = {
+        amount: a.amount,
+        description: a.merchant,
+        category: a.category,
+        payment_mode: a.mode,
+        date: a.date,
+        is_refund: a.type === 'income'
+      };
+      const saved = typeof onSaveExpense === 'function' ? await onSaveExpense(payload) : payload;
+      recentSessionLogsRef.current.unshift({ ...(saved || payload), created_at: new Date().toISOString() });
+      recordCopilotMetric(userId, 'log_success');
+      showToast(`Logged ${formatCurrency(a.amount)} ${a.merchant}!`, 'success');
+      return { savedTransaction: saved || payload };
+    }
+
+    if (tool.name === 'log_multiple_expenses') {
+      executedRequestIdsRef.current.add(reqId);
+      const savedItems = [];
+      for (const item of tool.args.items) {
+        const payload = {
+          amount: item.amount,
+          description: item.merchant,
+          category: item.category,
+          payment_mode: item.mode,
+          date: item.date,
+          is_refund: item.type === 'income'
+        };
+        const saved = typeof onSaveExpense === 'function' ? await onSaveExpense(payload) : payload;
+        savedItems.push(saved || payload);
+        recentSessionLogsRef.current.unshift({ ...(saved || payload), created_at: new Date().toISOString() });
+      }
+      recordCopilotMetric(userId, 'log_success');
+      showToast(`Logged ${savedItems.length} expenses!`, 'success');
+      return { savedItems };
+    }
+
+    if (tool.name === 'undo_last') {
+      executedRequestIdsRef.current.add(reqId);
+      const res = await processAssistantMessage('Undo', {
+        dashboardData,
+        recentTransactions: mergedRecentTxs,
+        formatCurrency,
+        onDeleteExpense,
+        lastLoggedBatch: lastLoggedBatchRef.current
+      });
+      recentSessionLogsRef.current.shift();
+      recordCopilotMetric(userId, 'undo');
+      showToast('Transaction undone and removed!', 'info');
+      return { undoResult: res };
+    }
+
+    if (tool.name === 'set_budget') {
+      executedRequestIdsRef.current.add(reqId);
+      if (typeof onSetBudget === 'function') {
+        await onSetBudget(tool.args.amount);
+      }
+      showToast(`Monthly budget updated to ${formatCurrency(tool.args.amount)}`, 'success');
+      return { budgetUpdated: tool.args.amount };
+    }
+
+    if (tool.name === 'split_bill') {
+      const { total, people, includeSelf } = tool.args;
+      const count = includeSelf ? people : people;
+      const share = Math.round((total / count) * 100) / 100;
+      return {
+        localCardText:
+          `*Smart Bill Split Calculation*\n` +
+          `*Total Bill:* ${formatCurrency(total)}\n` +
+          `*Split Between:* ${count} people\n` +
+          `*Each Person Owes:* *${formatCurrency(share)}*`
+      };
+    }
+
+    return {};
+  };
+
   const handleSendMessage = async (textToSend, extraContext = {}) => {
     const raw = (typeof textToSend === 'string' ? textToSend : inputText || '').trim();
     if (!raw) return;
@@ -655,6 +785,7 @@ export default function WhatsAppChatboxModal({
     // Mask sensitive banking tokens BEFORE inserting into DOM state or IndexedDB
     const { sanitizedText: safeDisplayText } = sanitizeFinancialText(raw);
     const startTs = Date.now();
+    const clientRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     const userMsg = {
       id: `msg_${Date.now()}`,
@@ -663,100 +794,255 @@ export default function WhatsAppChatboxModal({
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const currentHistorySnapshot = [...messages, userMsg];
+    setMessages(currentHistorySnapshot);
     if (typeof textToSend !== 'string') {
       setInputText('');
     }
     setIsTyping(true);
 
-    setTimeout(async () => {
-      try {
-        const mergedRecentTxs = [...recentSessionLogsRef.current, ...(recentTransactions || [])];
-        const result = await processAssistantMessage(raw, {
-          dashboardData,
-          recentTransactions: mergedRecentTxs,
-          formatCurrency,
-          onSaveExpense,
-          onDeleteExpense,
-          learnedCategories: prefs.learnedCategories,
-          customCategories: categories,
-          budgetRatios: prefs.budgetRatios,
-          onUpdateBudgetRatios: async (newRatios) => {
-            const updated = await saveBudgetRatios(userId, newRatios);
-            if (updated) setPrefs(updated);
-          },
-          lastLoggedBatch: lastLoggedBatchRef.current,
-          ...extraContext
+    const mergedRecentTxs = [...recentSessionLogsRef.current, ...(recentTransactions || [])];
+    const runLocalFallback = async (prefixBanner = '') => {
+      const result = await processAssistantMessage(raw, {
+        dashboardData,
+        recentTransactions: mergedRecentTxs,
+        formatCurrency,
+        onSaveExpense,
+        onDeleteExpense,
+        learnedCategories: prefs.learnedCategories,
+        customCategories: categories,
+        budgetRatios: prefs.budgetRatios,
+        onUpdateBudgetRatios: async (newRatios) => {
+          const updated = await saveBudgetRatios(userId, newRatios);
+          if (updated) setPrefs(updated);
+        },
+        lastLoggedBatch: lastLoggedBatchRef.current,
+        ...extraContext
+      });
+
+      if (result.type === 'batch_logged' && Array.isArray(result.savedIds)) {
+        lastLoggedBatchRef.current = result.savedIds;
+        const nowIso = new Date().toISOString();
+        (result.items || []).forEach(item => {
+          recentSessionLogsRef.current.unshift({ amount: item.amount, description: item.merchant, date: item.date, created_at: nowIso });
         });
-
-        if (result.type === 'batch_logged' && Array.isArray(result.savedIds)) {
-          lastLoggedBatchRef.current = result.savedIds;
-          const nowIso = new Date().toISOString();
-          (result.items || []).forEach(item => {
-            recentSessionLogsRef.current.unshift({
-              amount: item.amount,
-              description: item.merchant,
-              date: item.date,
-              created_at: nowIso
-            });
-          });
-          recentSessionLogsRef.current = recentSessionLogsRef.current.slice(0, 20);
-        } else if (result.type === 'expense_logged') {
-          lastLoggedBatchRef.current = result.savedTransaction?.id ? [result.savedTransaction.id] : null;
-          recentSessionLogsRef.current.unshift({
-            ...(result.savedTransaction || {}),
-            amount: result.parsed?.amount ?? result.savedTransaction?.amount,
-            description: result.parsed?.merchant ?? result.savedTransaction?.description,
-            date: result.parsed?.date ?? result.savedTransaction?.date,
-            created_at: new Date().toISOString()
-          });
-          recentSessionLogsRef.current = recentSessionLogsRef.current.slice(0, 20);
-        } else if (result.type === 'undo_success') {
-          recentSessionLogsRef.current.shift();
-        }
-
-        const botMsg = {
-          id: `msg_bot_${Date.now()}`,
-          sender: 'bot',
-          text: result.replyText,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: result.type,
-          data: result.data,
-          parsed: result.parsed || null,
-          savedTransaction: result.savedTransaction || null,
-          syncStatus: result.type === 'expense_logged' ? 'synced' : null,
-          actionButtons: result.actionButtons || null,
-          suggestedChips: result.suggestedChips || null
-        };
-
-        setMessages((prev) => [...prev, botMsg]);
-
-        if (result.type === 'expense_logged') {
-          recordCopilotMetric(userId, 'log_success', { durationMs: Date.now() - startTs });
-          showToast(`Logged ${formatCurrency(result.parsed?.amount)}! Tap Undo if needed.`, 'success');
-        } else if (result.type === 'batch_logged') {
-          recordCopilotMetric(userId, 'log_success', { durationMs: Date.now() - startTs });
-          showToast(`Logged ${result.count} expenses!`, 'success');
-        } else if (result.type === 'undo_success') {
-          recordCopilotMetric(userId, 'undo');
-          showToast('Transaction undone and removed!', 'info');
-        } else if (result.type === 'help_guidance') {
-          recordCopilotMetric(userId, 'parse_failure');
-        }
-      } catch (err) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `msg_bot_${Date.now()}`,
-            sender: 'bot',
-            text: `Error processing request: ${err.message || 'Please try again'}`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
-      } finally {
-        setIsTyping(false);
+        recentSessionLogsRef.current = recentSessionLogsRef.current.slice(0, 20);
+      } else if (result.type === 'expense_logged') {
+        lastLoggedBatchRef.current = result.savedTransaction?.id ? [result.savedTransaction.id] : null;
+        recentSessionLogsRef.current.unshift({
+          ...(result.savedTransaction || {}),
+          amount: result.parsed?.amount ?? result.savedTransaction?.amount,
+          description: result.parsed?.merchant ?? result.savedTransaction?.description,
+          date: result.parsed?.date ?? result.savedTransaction?.date,
+          created_at: new Date().toISOString()
+        });
+        recentSessionLogsRef.current = recentSessionLogsRef.current.slice(0, 20);
+      } else if (result.type === 'undo_success') {
+        recentSessionLogsRef.current.shift();
       }
-    }, 220);
+
+      const botMsg = {
+        id: `msg_bot_${Date.now()}`,
+        sender: 'bot',
+        text: prefixBanner ? `${prefixBanner}\n\n${result.replyText}` : result.replyText,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: result.type,
+        data: result.data,
+        parsed: result.parsed || null,
+        savedTransaction: result.savedTransaction || null,
+        syncStatus: result.type === 'expense_logged' ? 'synced' : null,
+        actionButtons: result.actionButtons || null,
+        suggestedChips: result.suggestedChips || null
+      };
+
+      setMessages((prev) => [...prev, botMsg]);
+
+      if (result.type === 'expense_logged') {
+        recordCopilotMetric(userId, 'log_success', { durationMs: Date.now() - startTs });
+        showToast(`Logged ${formatCurrency(result.parsed?.amount)}! Tap Undo if needed.`, 'success');
+      } else if (result.type === 'batch_logged') {
+        recordCopilotMetric(userId, 'log_success', { durationMs: Date.now() - startTs });
+        showToast(`Logged ${result.count} expenses!`, 'success');
+      } else if (result.type === 'undo_success') {
+        recordCopilotMetric(userId, 'undo');
+        showToast('Transaction undone and removed!', 'info');
+      } else if (result.type === 'help_guidance') {
+        recordCopilotMetric(userId, 'parse_failure');
+      }
+    };
+
+    // Hybrid routing: instantaneous local engine for deterministic shorthand, SMS, split, undo, affordability, frameworks
+    const shouldRouteLocal = Boolean(extraContext.forceLog || extraContext.targetTxId) || canHandleLocally(raw, {
+      dashboardData,
+      recentTransactions: mergedRecentTxs,
+      learnedCategories: prefs.learnedCategories,
+      customCategories: categories
+    });
+
+    if (shouldRouteLocal) {
+      setTimeout(async () => {
+        try {
+          await runLocalFallback();
+        } catch (err) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_bot_${Date.now()}`,
+              sender: 'bot',
+              text: `Error processing request: ${err.message || 'Please try again'}`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ]);
+        } finally {
+          setIsTyping(false);
+        }
+      }, 150);
+      return;
+    }
+
+    // Streaming SSE LLM path (/api/chat) for open-ended queries and natural tool proposals
+    const streamMsgId = `msg_stream_${Date.now()}`;
+    let streamBubbleInserted = false;
+
+    try {
+      const { recentTurns, olderSummary } = buildSanitizedConversationMemory(currentHistorySnapshot.slice(0, -1));
+      const safeContext = buildSafeChatContext({
+        consentEnabled: effectiveAiConsent,
+        dashboardData,
+        recentTransactions: mergedRecentTxs,
+        currency: 'INR'
+      });
+
+      const isSmsLike = /\b(?:debited|credited|a\/c|utr|rrn)\b/i.test(raw);
+      const streamRes = await streamChat({
+        message: safeDisplayText,
+        isSmsPaste: isSmsLike,
+        history: recentTurns,
+        olderSummary,
+        context: safeContext,
+        requestId: clientRequestId,
+        userId,
+        onToken: (fullAccumulatedText) => {
+          setIsTyping(false);
+          const safeStreamText = sanitizeRenderedLlmText(fullAccumulatedText);
+          if (!streamBubbleInserted) {
+            streamBubbleInserted = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: streamMsgId,
+                sender: 'bot',
+                text: safeStreamText,
+                isStreamingBubble: true,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
+            ]);
+          } else {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === streamMsgId ? { ...m, text: safeStreamText } : m))
+            );
+          }
+        },
+        onToolCall: async (tool) => {
+          if (!tool.requiresConfirm) {
+            // Auto-execute low-value high-confidence log (< ₹500, > 0.9) or read-only/split calculation
+            const execRes = await executeValidatedToolCall(tool);
+            if (execRes?.duplicateDetected) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_dup_${Date.now()}`,
+                  sender: 'bot',
+                  type: 'tool_confirm_card',
+                  pendingToolCall: { ...tool, requiresConfirm: true, isDuplicateWarning: true },
+                  text: `Possible duplicate detected: *${tool.args.merchant}* (${formatCurrency(tool.args.amount)}). Confirm to log anyway?`,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              ]);
+            } else if (execRes?.savedTransaction) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_tool_ok_${Date.now()}`,
+                  sender: 'bot',
+                  type: 'expense_logged',
+                  syncStatus: 'synced',
+                  savedTransaction: execRes.savedTransaction,
+                  actionButtons: [
+                    { label: 'Edit Details', actionType: 'inline_edit' },
+                    { label: `Undo (${formatCurrency(tool.args.amount)} ${tool.args.merchant})`, actionType: 'undo_tx', targetTxId: execRes.savedTransaction.id }
+                  ],
+                  text:
+                    `*Expense Logged Successfully!*\n` +
+                    `*Amount:* ${formatCurrency(tool.args.amount)}\n` +
+                    `*Category:* ${tool.args.category}\n` +
+                    `*Merchant:* ${tool.args.merchant}\n` +
+                    `*Mode:* ${tool.args.mode}`,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              ]);
+            } else if (execRes?.localCardText) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_split_tool_${Date.now()}`,
+                  sender: 'bot',
+                  text: execRes.localCardText,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              ]);
+            }
+            return;
+          }
+
+          // Render explicit CONFIRM / EDIT / CANCEL card for >= ₹500, low confidence, batch, undo, or set_budget
+          let confirmSummary = '';
+          if (tool.name === 'log_expense') {
+            confirmSummary = `Log *${formatCurrency(tool.args.amount)}* for *${tool.args.merchant}* (${tool.args.category} • ${tool.args.mode})?`;
+          } else if (tool.name === 'set_budget') {
+            confirmSummary = `Update your monthly budget to *${formatCurrency(tool.args.amount)}*?`;
+          } else if (tool.name === 'log_multiple_expenses') {
+            confirmSummary = `Log *${tool.args.items.length}* expenses from this message?`;
+          } else if (tool.name === 'undo_last') {
+            confirmSummary = `Undo the last logged transaction?`;
+          }
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_confirm_${Date.now()}`,
+              sender: 'bot',
+              type: 'tool_confirm_card',
+              pendingToolCall: tool,
+              text: confirmSummary,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ]);
+        }
+      });
+
+      if (streamBubbleInserted) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === streamMsgId ? { ...m, isStreamingBubble: false } : m))
+        );
+      }
+
+      if (!streamRes.ok) {
+        // Offline / timeout / rate-limit / provider error -> friendly retry notice + local engine fallback
+        await runLocalFallback(`_${streamRes.friendlyError}_`);
+        setMessages((prev) =>
+          prev.map((m, idx) =>
+            idx === prev.length - 1
+              ? { ...m, actionButtons: [...(m.actionButtons || []), { label: 'Retry Online AI', query: raw }] }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      await runLocalFallback('_Online AI unavailable right now. Using local assistant._');
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   /**
@@ -915,18 +1201,22 @@ export default function WhatsAppChatboxModal({
   };
 
   const handleClearChat = async () => {
-    await clearChatHistoryStorage(userId);
+    await Promise.all([
+      clearChatHistoryStorage(userId),
+      clearServerSession(userId)
+    ]);
+    recentSessionLogsRef.current = [];
     setEditingMsgId(null);
     setMessages([
       {
         id: `msg_fresh_${Date.now()}`,
         sender: 'bot',
         type: 'onboarding_welcome',
-        text: '*Chat history cleared!*\n\nAsk any financial question like `Can I afford 3500?`, `Chai 20`, or `Summary` to begin.',
+        text: '*Chat history cleared!*\n\nLocal & server session copies deleted. Ask any financial question like `Can I afford 3500?`, `Chai 20`, or `Summary` to begin.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ]);
-    showToast('Chat history cleared', 'info');
+    showToast('Chat history cleared (local & server copies)', 'info');
   };
 
   // Contextual chips derived from latest bot response + guaranteed core anchors (`Summary`, `Daily Pace`)
@@ -1136,10 +1426,27 @@ export default function WhatsAppChatboxModal({
           aria-live="polite"
           aria-relevant="additions"
         >
-          {/* Honest Privacy Notice Pill */}
-          <div className="mx-auto max-w-md text-center py-1.5 px-3.5 rounded-full bg-slate-200/80 dark:bg-white/[0.06] border border-slate-300/80 dark:border-white/[0.1] text-[10.5px] text-slate-700 dark:text-zinc-200 font-medium shadow-2xs flex items-center justify-center gap-1.5 select-none">
-            <ShieldCheck size={13} className="text-[#5B27DC] dark:text-[#C4B5FD] flex-shrink-0" />
-            <span>Privacy-first: sensitive numbers masked before processing</span>
+          {/* Honest Privacy & Retention Notice Pill */}
+          <div className="mx-auto max-w-md text-center py-2 px-3.5 rounded-2xl bg-slate-200/80 dark:bg-white/[0.06] border border-slate-300/80 dark:border-white/[0.1] text-[10.5px] text-slate-700 dark:text-zinc-200 font-medium shadow-2xs space-y-1 select-none">
+            <div className="flex items-center justify-center gap-1.5">
+              <ShieldCheck size={13} className="text-[#5B27DC] dark:text-[#C4B5FD] flex-shrink-0" />
+              <span>Sensitive numbers are masked before AI processing. AI sees only a summary of your spending. You can turn this off anytime.</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-[10px] text-slate-600 dark:text-zinc-300">
+              <span>Retention: last 200 sanitized messages in IndexedDB</span>
+              <button
+                type="button"
+                onClick={handleToggleConsentInChat}
+                data-testid="chat-ai-consent-pill"
+                className={`px-2 py-0.5 rounded-full font-bold border cursor-pointer ${
+                  effectiveAiConsent
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
+                    : 'bg-slate-100 dark:bg-white/[0.08] text-slate-700 dark:text-zinc-200 border-slate-300 dark:border-white/15'
+                }`}
+              >
+                Summary Sharing: {effectiveAiConsent ? 'ON' : 'OFF'}
+              </button>
+            </div>
           </div>
 
           {messages.map((msg) => {
@@ -1181,13 +1488,78 @@ export default function WhatsAppChatboxModal({
                   )}
 
                   {/* Inline Expense Editor (for corrections, low-confidence confirm, or category learning) */}
-                  {isEditingThis && (msg.savedTransaction || msg.parsed) && (
+                  {isEditingThis && (msg.savedTransaction || msg.parsed || msg.pendingToolCall?.args) && (
                     <InlineExpenseEditor
-                      initialValues={msg.savedTransaction || msg.parsed}
+                      initialValues={msg.savedTransaction || msg.parsed || {
+                        merchant: msg.pendingToolCall?.args?.merchant,
+                        amount: msg.pendingToolCall?.args?.amount,
+                        category: msg.pendingToolCall?.args?.category,
+                        payment_mode: msg.pendingToolCall?.args?.mode,
+                        date: msg.pendingToolCall?.args?.date,
+                        type: msg.pendingToolCall?.args?.type
+                      }}
                       categoryOptions={categoryOptions}
                       onSave={(edited) => handleSaveInlineEdit(msg, edited)}
                       onCancel={() => setEditingMsgId(null)}
                     />
+                  )}
+
+                  {/* Validated Tool Call CONFIRM / EDIT / CANCEL Card */}
+                  {msg.type === 'tool_confirm_card' && msg.pendingToolCall && !msg.toolResolved && !isEditingThis && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-white/[0.08] flex flex-wrap gap-2" data-testid="tool-confirm-card">
+                      <button
+                        type="button"
+                        data-testid="tool-confirm-btn"
+                        onClick={async () => {
+                          const tool = msg.pendingToolCall;
+                          const execRes = await executeValidatedToolCall(tool, { forceConfirmed: true });
+                          if (execRes?.skippedDuplicateRequest) return;
+                          setMessages(prev => prev.map(m => m.id === msg.id ? {
+                            ...m,
+                            toolResolved: 'confirmed',
+                            savedTransaction: execRes?.savedTransaction || null,
+                            type: execRes?.savedTransaction ? 'expense_logged' : m.type,
+                            syncStatus: execRes?.savedTransaction ? 'synced' : null,
+                            text: execRes?.savedTransaction
+                              ? `*Expense Logged Successfully!*\n*Amount:* ${formatCurrency(tool.args.amount)}\n*Merchant:* ${tool.args.merchant}\n*Category:* ${tool.args.category}\n*Mode:* ${tool.args.mode}`
+                              : execRes?.budgetUpdated
+                              ? `*Budget Updated!*\nMonthly budget is now *${formatCurrency(execRes.budgetUpdated)}*.`
+                              : `*Confirmed & Completed!*`
+                          } : m));
+                        }}
+                        className="flex-1 min-h-[40px] py-2 px-3 rounded-xl bg-[#6C47FF] hover:bg-[#5835E5] text-white font-bold text-[12px] flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Check size={14} />
+                        <span>Confirm</span>
+                      </button>
+
+                      {msg.pendingToolCall.name === 'log_expense' && (
+                        <button
+                          type="button"
+                          data-testid="tool-edit-btn"
+                          onClick={() => setEditingMsgId(msg.id)}
+                          className="min-h-[40px] py-2 px-3 rounded-xl bg-slate-100 dark:bg-white/[0.08] text-slate-800 dark:text-zinc-100 border border-slate-300 dark:border-white/15 font-semibold text-[12px] flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 size={13} />
+                          <span>Edit</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        data-testid="tool-cancel-btn"
+                        onClick={() => {
+                          setMessages(prev => prev.map(m => m.id === msg.id ? {
+                            ...m,
+                            toolResolved: 'cancelled',
+                            text: `${m.text}\n\n_Cancelled — no changes written to your ledger._`
+                          } : m));
+                        }}
+                        className="min-h-[40px] py-2 px-3 rounded-xl bg-white dark:bg-white/[0.04] text-slate-600 dark:text-zinc-300 border border-slate-300 dark:border-white/15 font-semibold text-[12px] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   )}
 
                   {/* Contextual & Idempotent Action Buttons */}
@@ -1307,17 +1679,30 @@ export default function WhatsAppChatboxModal({
               <Mic size={16} />
             </button>
 
-            {/* Send Button (44px accessible target) */}
-            <button
-              type="button"
-              onClick={() => handleSendMessage()}
-              disabled={!inputText.trim() || isTyping}
-              data-testid="whatsapp-chat-send-btn"
-              className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-gradient-to-r from-[#5B27DC] to-[#7B42F6] hover:from-[#4E1FC5] hover:to-[#6E32E9] text-white shadow-md shadow-purple-500/25 flex items-center justify-center transition-all cursor-pointer active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none flex-shrink-0"
-              aria-label="Send"
-            >
-              <Send size={15} />
-            </button>
+            {/* Stop Generating (AbortController) OR Send Button (44px accessible target) */}
+            {isStreaming ? (
+              <button
+                type="button"
+                onClick={stopGenerating}
+                data-testid="stop-generating-btn"
+                title="Stop generating"
+                aria-label="Stop generating"
+                className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-500/25 flex items-center justify-center transition-all cursor-pointer active:scale-90 flex-shrink-0"
+              >
+                <Square size={13} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleSendMessage()}
+                disabled={!inputText.trim() || isTyping}
+                data-testid="whatsapp-chat-send-btn"
+                className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-gradient-to-r from-[#5B27DC] to-[#7B42F6] hover:from-[#4E1FC5] hover:to-[#6E32E9] text-white shadow-md shadow-purple-500/25 flex items-center justify-center transition-all cursor-pointer active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none flex-shrink-0"
+                aria-label="Send"
+              >
+                <Send size={15} />
+              </button>
+            )}
           </div>
         </div>
       </div>

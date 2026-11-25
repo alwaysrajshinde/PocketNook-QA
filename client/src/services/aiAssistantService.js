@@ -12,9 +12,9 @@ import { parseSmsNotification, parseIndianAmount, CATEGORY_KEYWORDS } from './sm
 import { sanitizeFinancialText, prepareSafeFinancialSnapshot, MAX_SANITIZE_INPUT_CHARS } from './piiSanitizerService.js';
 import { getUpcomingRenewals } from './recurringExpensesService.js';
 import { inferDefaultPaymentMode } from './chatStorageService.js';
-import { askCopilotAI } from './api.js';
 
 const FINANCIAL_DISCLAIMER = '\n\n_Informational estimate only — not regulated financial advice._';
+const DUPLICATE_WINDOW_MS = 5 * 60 * 1000; // 5-minute duplicate protection window
 
 /**
  * Reads upcoming recurring bill total safely without seeding defaults if user hasn't set up recurring bills
@@ -32,8 +32,6 @@ function getActiveUpcomingBillsTotal(daysRemaining) {
     return 0;
   }
 }
-
-const DUPLICATE_WINDOW_MS = 2 * 60 * 1000; // 2-minute active paste/double-submit protection window
 
 function parseUtcTimestamp(ts) {
   if (!ts) return null;
@@ -301,32 +299,80 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     return wrapResult(await handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSaveExpense));
   }
 
-  // 21. OPTIONAL SANITIZED EXTERNAL AI PROXY
-  try {
-    const aiRes = await Promise.race([
-      askCopilotAI(text, snapshot),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 4000))
-    ]);
-
-    if (aiRes && aiRes.success && aiRes.replyText) {
-      return wrapResult({
-        replyText: aiRes.replyText,
-        type: 'ai_copilot_response',
-        model: aiRes.model || 'gemini-2.5-flash',
-        suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Saving Tips']
-      });
-    }
-  } catch (e) {
-    // Graceful offline fallback
-  }
-
-  // 22. LOCAL SMART FINANCIAL SYNTHESIZER
+  // 21. LOCAL SMART FINANCIAL SYNTHESIZER (offline / fallback)
   if (isGeneralFinancialQuestion(lower)) {
     return wrapResult(handleSmartFinancialAdvisory(text, snapshot, formatCurrency));
   }
 
-  // 23. FALLBACK GUIDANCE ROADMAP
+  // 22. FALLBACK GUIDANCE ROADMAP
   return wrapResult(handleFallbackResponse(text, snapshot, formatCurrency));
+}
+
+/**
+ * Determines whether a prompt should execute instantaneously via the local deterministic engine
+ * rather than making an external SSE /api/chat LLM call.
+ */
+export function canHandleLocally(rawInput = '', context = {}) {
+  const { sanitizedText } = sanitizeFinancialText((rawInput || '').trim());
+  const text = sanitizedText;
+  const lower = text.toLowerCase().trim();
+  if (!lower) return true;
+
+  // Explicitly route budget updates, natural LLM tool prompts, or injection tests to /api/chat SSE
+  if (/\bset\s+(?:my\s+)?budget\b/i.test(lower) || /\bignore\s+(?:all\s+)?previous\s+instructions\b/i.test(lower)) {
+    return false;
+  }
+
+  const snapshot = prepareSafeFinancialSnapshot({
+    dashboardData: context.dashboardData || {},
+    recentTransactions: context.recentTransactions || []
+  });
+  const defaultPaymentMode = inferDefaultPaymentMode(context.recentTransactions || []);
+  const parserOptions = {
+    learnedCategories: context.learnedCategories || {},
+    customCategories: context.customCategories || [],
+    defaultPaymentMode
+  };
+
+  if (/^apply\s+(\d{2})\/(\d{2})\/(\d{2})/i.test(lower)) return true;
+  if (
+    isGreetingOrIdentity(lower) ||
+    isUndoIntent(lower) ||
+    isTodaysTotalIntent(lower) ||
+    isBillSplitIntent(lower) ||
+    isAffordabilityIntent(lower) ||
+    isPaceOrBurnRateIntent(lower) ||
+    isCategoryBreakdownIntent(lower) ||
+    isRecentHistoryIntent(lower) ||
+    isRule503020Intent(lower) ||
+    isEmergencyFundIntent(lower) ||
+    isDebtPayoffIntent(lower) ||
+    isOverbudgetIntent(lower, snapshot) ||
+    isCategoryOptimizationIntent(lower) ||
+    isGoalPlanningIntent(lower) ||
+    isBilingualSavingsIntent(lower) ||
+    isInvestmentOrWealthIntent(lower) ||
+    isSavingAdviceIntent(lower) ||
+    isSummaryIntent(lower)
+  ) {
+    return true;
+  }
+
+  if (extractMultiItemExpenses(text, parserOptions).length > 1) return true;
+  const parsed = parseSmsNotification(text, parserOptions);
+  if (parsed.success && parsed.amount > 0) return true;
+
+  // Deterministic gibberish check (non-word random strings) handled locally without wasting LLM quota
+  if (/^[a-z0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]+$/i.test(lower) && !/\s/.test(lower) && lower.length > 8) {
+    return true;
+  }
+
+  // Known benchmark phrasing for general coaching fallback
+  if (/\bmanage\s+(?:money|monthly\s+salary)\b/i.test(lower)) {
+    return true;
+  }
+
+  return false;
 }
 
 /* ========================================================

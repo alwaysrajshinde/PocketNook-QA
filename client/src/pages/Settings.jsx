@@ -27,6 +27,7 @@ import GoogleSheetsExportModal from '../components/export/GoogleSheetsExportModa
 import RecurringSubscriptionsModal from '../components/RecurringSubscriptionsModal';
 import ReceiptScannerModal from '../components/ReceiptScannerModal';
 import { getLocalTransactions, getTransactions } from '../services/api';
+import { loadCopilotPreferences, saveAiDataConsent } from '../services/chatStorageService';
 import { buildMoreSearchIndex, searchMoreIndex } from '../services/moreSearchService';
 import { getComingSoonFeatures, isFeatureComingSoon } from '../constants/featureAvailability';
 
@@ -99,6 +100,32 @@ export default function Settings({
   // Upcoming Features Preview Modal State
   const [activeComingSoonFeature, setActiveComingSoonFeature] = useState(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [aiDataConsent, setAiDataConsent] = useState(() => settings?.ai_data_consent === 'true');
+
+  useEffect(() => {
+    const uid = user?.uid || user?.email || 'guest';
+    loadCopilotPreferences(uid).then((prefs) => {
+      if (settings?.ai_data_consent !== undefined) {
+        setAiDataConsent(settings.ai_data_consent === 'true');
+      } else {
+        setAiDataConsent(Boolean(prefs?.aiDataConsent));
+      }
+    }).catch(() => {});
+  }, [user?.uid, user?.email, settings?.ai_data_consent]);
+
+  const handleToggleAiDataConsent = async () => {
+    const next = !aiDataConsent;
+    setAiDataConsent(next);
+    const uid = user?.uid || user?.email || 'guest';
+    await saveAiDataConsent(uid, next);
+    if (onUpdateSettings) {
+      await onUpdateSettings({ ai_data_consent: next ? 'true' : 'false' });
+    }
+    showToast(
+      next ? 'AI spending summary sharing enabled (masked PII).' : 'AI data sharing disabled. AI sees only your typed question.',
+      'info'
+    );
+  };
 
   const handleOpenGoogleSheets = async () => {
     let txs = getLocalTransactions();
@@ -1053,6 +1080,37 @@ export default function Settings({
                   </div>
                 </div>
 
+                {/* Sub-Section AI Privacy Consent Toggle */}
+                <div className="p-4 rounded-2xl bg-slate-50/90 dark:bg-[#120F24] border border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-[#281D4C] text-[#6C47FF] dark:text-[#C084FC] flex items-center justify-center flex-shrink-0">
+                      <Sparkles size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white">
+                        Use AI with my data
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        Default OFF. When enabled, PocketNook masks sensitive numbers and sends only an aggregated spending summary to answer chat questions.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={aiDataConsent}
+                    onClick={handleToggleAiDataConsent}
+                    data-testid="ai-data-consent-toggle-desktop"
+                    className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                      aiDataConsent ? 'bg-[#6C47FF]' : 'bg-slate-300 dark:bg-white/15'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      aiDataConsent ? 'translate-x-6' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+
                 {/* Sub-Section B: Export Transactions */}
                 <div className="space-y-2.5 pt-1">
                   <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -1822,6 +1880,36 @@ export default function Settings({
             </div>
 
             <div className="rounded-3xl bg-white dark:bg-[#18132F] border border-slate-200/80 dark:border-purple-500/10 shadow-xs divide-y divide-slate-100 dark:divide-white/5 overflow-hidden">
+              <div className="p-4 flex items-center justify-between gap-3">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-[#281D4C] text-[#6C47FF] dark:text-[#C084FC] flex items-center justify-center flex-shrink-0 shadow-xs">
+                    <Sparkles size={18} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-white">
+                      Use AI with my data
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Sensitive numbers masked; AI sees only a spending summary when ON (default OFF)
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={aiDataConsent}
+                  onClick={handleToggleAiDataConsent}
+                  data-testid="ai-data-consent-toggle-mobile"
+                  className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                    aiDataConsent ? 'bg-[#6C47FF]' : 'bg-slate-300 dark:bg-white/15'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                    aiDataConsent ? 'translate-x-6' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={onOpenImport}

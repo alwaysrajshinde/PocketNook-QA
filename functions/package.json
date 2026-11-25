@@ -1,0 +1,20 @@
+{
+  "name": "pocketnook-functions",
+  "description": "PocketNook Firebase Cloud Functions v2 for streaming AI chat",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.0.0",
+    "helmet": "^8.0.0",
+    "zod": "^3.24.0"
+  }
+}

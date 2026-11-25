@@ -8,11 +8,10 @@ import {
 } from 'lucide-react';
 import {
   processAssistantMessage,
-  computeProactiveNudges,
   canHandleLocally,
   findDuplicateTransaction
 } from '../services/aiAssistantService';
-import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from '../services/piiSanitizerService';
+import { sanitizeFinancialText } from '../services/piiSanitizerService';
 import { buildSafeChatContext, buildSanitizedConversationMemory } from '../services/chatContextService';
 import { IS_QA, CHAT_DISPLAY_NAME } from '../utils/appBrand';
 import {
@@ -1235,9 +1234,11 @@ export default function WhatsAppChatboxModal({
     const suggested = Array.isArray(lastBot?.suggestedChips) ? lastBot.suggestedChips : [];
 
     const coreList = [
+      { id: 'vibe-check', label: 'Vibe Check', text: 'Vibe check my spending' },
       { id: 'summary', label: 'Summary', text: 'Summary' },
       { id: 'daily-pace', label: 'Daily Pace', text: 'Daily Pace' },
-      { id: 'rule-503020', label: '50/30/20 Rule', text: 'Explain 50/30/20 rule for my budget' },
+      { id: 'weekend-budget', label: 'Weekend Budget', text: 'How much for this weekend?' },
+      { id: 'biggest-spend', label: 'Biggest Spend', text: 'What was my biggest expense?' },
       { id: 'food-spend', label: 'Food Spend', text: 'Food Spend' },
       { id: 'split-bill', label: 'Split Bill', text: 'Split 2,400 between 6 people' },
       { id: 'undo-last', label: 'Undo Last', text: 'Undo' }
@@ -1265,16 +1266,14 @@ export default function WhatsAppChatboxModal({
     return merged;
   }, [messages]);
 
-  // Live financial snapshot telemetry
-  const snapshot = useMemo(() => prepareSafeFinancialSnapshot({ dashboardData, recentTransactions }), [dashboardData, recentTransactions]);
-  const nudges = useMemo(() => computeProactiveNudges(snapshot, recentTransactions), [snapshot, recentTransactions]);
-  const isDeficit = snapshot.remainingBudget < 0;
-
   if (!shouldRender) return null;
 
   const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 640;
   const mobileDynamicStyle = isMobileViewport && viewportHeight
-    ? { height: `${Math.max(380, viewportHeight - 8)}px`, maxHeight: `${Math.max(380, viewportHeight - 8)}px` }
+    ? {
+        height: `${Math.min(Math.round(viewportHeight * 0.74), Math.max(360, viewportHeight - 16))}px`,
+        maxHeight: `${Math.max(360, viewportHeight - 16)}px`
+      }
     : undefined;
 
   return (
@@ -1294,7 +1293,7 @@ export default function WhatsAppChatboxModal({
         ref={modalCardRef}
         onClick={(e) => e.stopPropagation()}
         style={mobileDynamicStyle}
-        className={`relative w-full sm:max-w-lg h-[94dvh] sm:h-[82vh] sm:max-h-[740px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[24px] sm:rounded-[36px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+        className={`relative w-full sm:max-w-lg h-[74dvh] sm:h-[76vh] sm:max-h-[620px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[28px] sm:rounded-[32px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
           isAnimating ? 'translate-y-0 sm:scale-100' : 'translate-y-full sm:translate-y-8 sm:scale-95'
         }`}
       >
@@ -1381,58 +1380,9 @@ export default function WhatsAppChatboxModal({
           </div>
         </div>
 
-        {/* Live Telemetry HUD (with Icon + Text labels for accessibility) */}
-        <div className="px-4 py-2 bg-[#f4f5fa] dark:bg-[#0d0b18] select-none z-10">
-          <div className="bg-white/95 dark:bg-[#16132A]/95 backdrop-blur-md border border-slate-300/80 dark:border-white/[0.12] rounded-2xl p-2 px-3.5 flex items-center justify-between shadow-2xs">
-            <div className="flex-1 text-center border-r border-slate-200 dark:border-white/[0.08] pr-2">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-300 flex items-center justify-center gap-1 mb-0.5">
-                {isDeficit ? <AlertTriangle size={10} className="text-rose-600 dark:text-rose-300" /> : <CheckCircle2 size={10} className="text-emerald-600 dark:text-emerald-300" />}
-                <span>{isDeficit ? 'Over' : 'Remaining'}</span>
-              </span>
-              <span className={`font-mono tabular-nums font-bold text-[13.5px] tracking-tight ${isDeficit ? 'text-rose-700 dark:text-rose-300' : 'text-[#5B27DC] dark:text-[#C4B5FD]'}`}>
-                {formatCurrency(snapshot.remainingBudget)}
-              </span>
-            </div>
-            <div className="flex-1 text-center border-r border-slate-200 dark:border-white/[0.08] px-2">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-300 block mb-0.5">
-                Safe Pace
-              </span>
-              <span className="font-mono tabular-nums font-bold text-[13.5px] text-slate-900 dark:text-zinc-100 tracking-tight">
-                {formatCurrency(snapshot.safeDailyPace)}
-                <span className="text-[9.5px] font-normal text-slate-500 dark:text-zinc-300 ml-0.5">/d</span>
-              </span>
-            </div>
-            <div className="flex-1 text-center pl-2">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-300 block mb-0.5">
-                Today
-              </span>
-              <span className="font-mono tabular-nums font-bold text-[13.5px] text-slate-900 dark:text-zinc-100 tracking-tight">
-                {formatCurrency(snapshot.todaySpent)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Proactive Nudge Strip (if applicable) */}
-        {nudges.length > 0 && (
-          <div className="px-4 pb-1 flex gap-2 overflow-x-auto scrollbar-none">
-            {nudges.map((n) => (
-              <button
-                key={n.id}
-                type="button"
-                onClick={() => handleSendMessage(n.query)}
-                className="text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300/70 dark:border-amber-500/30 flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
-              >
-                <AlertTriangle size={12} />
-                <span>{n.text}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Conversation Canvas (Accessible live region) */}
         <div
-          className="flex-1 overflow-y-auto px-4 py-2 space-y-3.5 bg-[#f4f5fa] dark:bg-[#0d0b18] scrollbar-none"
+          className="flex-1 overflow-y-auto px-4 py-3 space-y-3.5 bg-[#f4f5fa] dark:bg-[#0d0b18] scrollbar-none"
           data-testid="whatsapp-messages-container"
           aria-live="polite"
           aria-relevant="additions"

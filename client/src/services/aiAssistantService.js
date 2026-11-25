@@ -197,7 +197,24 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     return wrapResult(handleGreetingResponse(snapshot, formatCurrency, userName, lower));
   }
 
-  // 1b. NATURAL BUDGET HEALTH & TOP/LATEST EXPENSE INSIGHT
+  // 1b. COOL INTERACTIVE FEATURES: QUICK CALCULATOR, VIBE CHECK, WEEKEND ALLOWANCE, FUN/FINANCE Q&A
+  if (isCalculatorIntent(lower)) {
+    return wrapResult(handleCalculatorIntent(text, formatCurrency));
+  }
+  if (isVibeCheckIntent(lower)) {
+    return wrapResult(handleVibeCheckIntent(snapshot, formatCurrency));
+  }
+  if (isWeekendAllowanceIntent(lower)) {
+    return wrapResult(handleWeekendAllowanceIntent(snapshot, formatCurrency));
+  }
+  if (isFunOrBanterIntent(lower)) {
+    return wrapResult(handleFunOrBanterIntent(lower, snapshot, formatCurrency));
+  }
+  if (isFinanceTopicIntent(lower)) {
+    return wrapResult(handleFinanceTopicExplainer(lower, snapshot, formatCurrency));
+  }
+
+  // 1c. NATURAL BUDGET HEALTH & TOP/LATEST EXPENSE INSIGHT
   if (isSpendingInsightIntent(lower)) {
     return wrapResult(handleSpendingInsight(lower, snapshot, formatCurrency));
   }
@@ -356,6 +373,11 @@ export function canHandleLocally(rawInput = '', context = {}) {
     isPersonalNameIntent(lower) ||
     isSmallTalkOrFeedbackIntent(lower) ||
     isGreetingOrIdentity(lower) ||
+    isCalculatorIntent(lower) ||
+    isVibeCheckIntent(lower) ||
+    isWeekendAllowanceIntent(lower) ||
+    isFunOrBanterIntent(lower) ||
+    isFinanceTopicIntent(lower) ||
     isSpendingInsightIntent(lower) ||
     isUndoIntent(lower) ||
     isTodaysTotalIntent(lower) ||
@@ -398,6 +420,159 @@ export function canHandleLocally(rawInput = '', context = {}) {
 /* ========================================================
    INTENT CLASSIFIERS
    ======================================================== */
+
+function isCalculatorIntent(lower) {
+  return /\b\d+(?:\.\d+)?\s*%\s*of\s*[0-9,]+(?:\.\d+)?\b/i.test(lower) ||
+    /^(?:calc(?:ulate)?\s+)?[\d,.\s]+(?:[+\-*/×÷][\d,.\s]+)+=?$/i.test(lower.replace(/\?/g, '').trim()) ||
+    /\b(?:what\s+is|calculate)\s+[\d,.]+\s*[+\-*/×÷]\s*[\d,.]+/i.test(lower);
+}
+
+function handleCalculatorIntent(text, formatCurrency) {
+  const pctMatch = text.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*([0-9,]+(?:\.\d+)?)/i);
+  if (pctMatch) {
+    const pct = parseFloat(pctMatch[1]);
+    const base = parseFloat(pctMatch[2].replace(/,/g, ''));
+    const res = Math.round(((pct / 100) * base) * 100) / 100;
+    return {
+      replyText: `*Quick Calculator*\n${pct}% of ${formatCurrency(base)} = *${formatCurrency(res)}*`,
+      type: 'calculator',
+      suggestedChips: ['Summary', 'Daily Pace', 'Split Bill']
+    };
+  }
+  const cleanExpr = text
+    .replace(/^(?:what\s+is|calc(?:ulate)?)\s+/i, '')
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/,/g, '')
+    .replace(/[^0-9+\-*/().\s]/g, '')
+    .trim();
+  const arithMatch = cleanExpr.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
+  if (arithMatch) {
+    const a = parseFloat(arithMatch[1]);
+    const op = arithMatch[2];
+    const b = parseFloat(arithMatch[3]);
+    let ans = 0;
+    if (op === '+') ans = a + b;
+    else if (op === '-') ans = a - b;
+    else if (op === '*') ans = a * b;
+    else if (op === '/') ans = b !== 0 ? Math.round((a / b) * 100) / 100 : null;
+
+    if (ans !== null) {
+      return {
+        replyText: `*Quick Calculator*\n\`${a} ${op} ${b}\` = *${ans.toLocaleString('en-IN')}*`,
+        type: 'calculator',
+        suggestedChips: ['Summary', 'Daily Pace']
+      };
+    }
+  }
+  return {
+    replyText: `Try a quick calculation like \`15% of 2400\` or \`250 * 4\`.`,
+    type: 'calculator'
+  };
+}
+
+function isVibeCheckIntent(lower) {
+  return /\b(?:vibe\s*check|roast\s*my\s*spend|rate\s*my\s*(?:budget|month|spending)|am\s*i\s*broke|money\s*mood)\b/i.test(lower);
+}
+
+function handleVibeCheckIntent(snapshot, formatCurrency) {
+  const pct = snapshot.percentSpent || 0;
+  const topCat = snapshot.topCategory?.category || 'everyday spends';
+  const rem = snapshot.remainingBudget;
+  let badge = 'Calm & Calculated';
+  let commentary = `With *${formatCurrency(rem)}* left and *${pct}%* spent, your finances are cruising smoothly!`;
+  if (rem < 0) {
+    badge = 'Wallet Needs a Hug';
+    commentary = `You're *${formatCurrency(Math.abs(rem))}* over budget mostly thanks to *${topCat}*. Time for a no-spend challenge for the next few days!`;
+  } else if (pct >= 80) {
+    badge = 'Tightrope Mode';
+    commentary = `*${pct}%* used and *${formatCurrency(rem)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*). Go easy on *${topCat}* this week and you'll land smoothly.`;
+  } else if (pct <= 40) {
+    badge = 'Budget Boss';
+    commentary = `Only *${pct}%* spent so far! Keeping *${formatCurrency(snapshot.safeDailyPace)}/day* safe keeps you ahead of the game.`;
+  }
+  return {
+    replyText: `*Money Vibe Check: ${badge}*\n\n${commentary}`,
+    type: 'vibe_check',
+    suggestedChips: ['Weekend Budget', 'Biggest Spend', 'Summary']
+  };
+}
+
+function isWeekendAllowanceIntent(lower) {
+  return /\b(?:weekend\s*(?:budget|plan|spend)|going\s*out\s*tonight|tonight'?s?\s*budget|date\s*night\s*budget|how\s*much\s*can\s*i\s*spend\s*(?:today|tonight|this\s*weekend))\b/i.test(lower);
+}
+
+function handleWeekendAllowanceIntent(snapshot, formatCurrency) {
+  const pace = snapshot.safeDailyPace || 0;
+  const tonightSafe = Math.max(0, Math.min(snapshot.remainingBudget, Math.round(pace * 1.5)));
+  const weekendSafe = Math.max(0, Math.min(snapshot.remainingBudget, Math.round(pace * 2.5)));
+  return {
+    replyText:
+      `*Weekend & Going-Out Allowance*\n\n` +
+      `• *Comfortable Tonight:* *${formatCurrency(tonightSafe)}*\n` +
+      `• *Full Weekend Pool:* *${formatCurrency(weekendSafe)}*\n` +
+      `• *Baseline Daily Pace:* ${formatCurrency(pace)}/day\n\n` +
+      (snapshot.remainingBudget <= 0
+        ? `Your monthly limit is already exceeded—stick to free plans or home-cooked meals if possible.`
+        : `Staying near these caps leaves your remaining ${snapshot.daysRemaining} days stress-free.`),
+    type: 'weekend_allowance',
+    suggestedChips: ['Vibe Check', 'Split Bill', 'Summary']
+  };
+}
+
+function isFunOrBanterIntent(lower) {
+  return /\b(?:joke|funny|motivat|quote|fun\s*fact|something\s*cool|are\s*you\s*(?:an?\s*)?(?:ai|bot|robot|real)|who\s*made\s*you|what\s*is\s*pocketnook)\b/i.test(lower);
+}
+
+function handleFunOrBanterIntent(lower, snapshot, formatCurrency) {
+  if (/\b(?:who\s*made|what\s*is\s*pocketnook|are\s*you\s*(?:an?\s*)?(?:ai|bot|robot|real))\b/i.test(lower)) {
+    return {
+      replyText:
+        `I'm *PocketNook Chat*—built by Raj Shinde as a privacy-first financial copilot. Instant expense logging, smart splits, affordability checks, and quick math run right on your device, keeping sensitive banking numbers masked.`,
+      type: 'banter',
+      suggestedChips: ['Vibe Check', '15% of 2400', 'Summary']
+    };
+  }
+  const quotes = [
+    `"Beware of little expenses; a small leak will sink a great ship." — Even cutting one ₹150 impulse order a week saves ~₹7,800/year!`,
+    `Fun money rule: Try the *48-Hour Wishlist Rule*—wait 2 days before buying anything over *${formatCurrency(Math.max(500, snapshot.safeDailyPace || 500))}*, and half the cravings vanish.`,
+    `Quick financial chuckle: My favorite workout routine is running out of money right before payday—let's keep yours at *${formatCurrency(snapshot.safeDailyPace)}/day* so that never happens!`
+  ];
+  const pick = quotes[new Date().getMinutes() % quotes.length];
+  return {
+    replyText: `${pick}`,
+    type: 'banter',
+    suggestedChips: ['Vibe Check', 'Weekend Budget', 'Daily Pace']
+  };
+}
+
+function isFinanceTopicIntent(lower) {
+  return /\b(?:what\s+is|explain|tell\s+me\s+about|how\s+does)\s+(?:a\s+|an\s+|the\s+)?(?:sip|cibil|credit\s*score|ppf|nps|80c|upi|gst|compounding|inflation|mutual\s*fund|index\s*fund)\b/i.test(lower);
+}
+
+function handleFinanceTopicExplainer(lower) {
+  let reply = '';
+  if (/\bsip|mutual\s*fund|index\s*fund\b/i.test(lower)) {
+    reply = `*SIP (Systematic Investment Plan):* Investing a fixed rupee amount every month in a mutual/index fund so you average out market ups and downs effortlessly (rupee-cost averaging). Best suited for 5+ year goals.${FINANCIAL_DISCLAIMER}`;
+  } else if (/\bcibil|credit\s*score\b/i.test(lower)) {
+    reply = `*CIBIL / Credit Score (300–900):* Aim for 750+. Two biggest drivers: always pay full dues on time (never just minimum due) and keep credit card utilization below 30% of your limit.${FINANCIAL_DISCLAIMER}`;
+  } else if (/\bppf|nps|80c\b/i.test(lower)) {
+    reply = `*Tax-Saving Staples (80C / PPF / NPS):* PPF offers tax-free compounding with a 15-year lock-in under Sec 80C (old regime). NPS adds retirement corpus discipline plus extra Sec 80CCD(1B) deduction.${FINANCIAL_DISCLAIMER}`;
+  } else if (/\bupi\b/i.test(lower)) {
+    reply = `*Smart UPI Hygiene:* Never enter your UPI PIN to *receive* money (PIN is only for sending), verify merchant name before tapping pay, and review small ₹20–₹100 daily UPI hops weekly.`;
+  } else if (/\bcompounding|inflation\b/i.test(lower)) {
+    reply = `*Compounding vs. Inflation:* Inflation (~5–7%/yr in India) quietly erodes idle cash sitting in low-interest savings accounts, while compounding grows reinvested returns exponentially over long horizons.${FINANCIAL_DISCLAIMER}`;
+  } else {
+    reply = `*Quick Money Concept:* Consistent tracking, keeping fixed bills under control, and automating savings on payday beats chasing complex products every single time.${FINANCIAL_DISCLAIMER}`;
+  }
+  return {
+    replyText: reply,
+    type: 'finance_topic',
+    suggestedChips: ['50/30/20 Rule', 'Emergency Fund', 'Summary']
+  };
+}
+
+function isConversationalSentenceCheck() { return false; }
 
 function isPersonalNameIntent(lower) {
   return /\b(?:my\s+name|what(?:'s|\s+is)\s+my\s+name|tell\s+me\s+my\s+name|who\s+am\s+i|mera\s+naam|mera\s+name)\b/i.test(lower);
@@ -579,8 +754,8 @@ function handleSpendingInsight(lower, snapshot, formatCurrency) {
   const healthLine = snapshot.remainingBudget < 0
     ? `You're currently *${formatCurrency(Math.abs(snapshot.remainingBudget))} over budget*, so keeping discretionary spends minimal for the next ${snapshot.daysRemaining} days will help.`
     : snapshot.percentSpent >= 80
-    ? `You've used *${snapshot.percentSpent}%* of your budget with *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*). Staying mindful on *${snapshot.topCategory?.category || 'top categories'}* will finish the month smoothly.`
-    : `You're in solid shape! Only *${snapshot.percentSpent}%* of your budget is used—you still have *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
+      ? `You've used *${snapshot.percentSpent}%* of your budget with *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*). Staying mindful on *${snapshot.topCategory?.category || 'top categories'}* will finish the month smoothly.`
+      : `You're in solid shape! Only *${snapshot.percentSpent}%* of your budget is used—you still have *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
 
   return {
     replyText: `${healthLine}\n\nToday's spend so far: *${formatCurrency(snapshot.todaySpent)}*.`,
@@ -590,16 +765,29 @@ function handleSpendingInsight(lower, snapshot, formatCurrency) {
 }
 
 function handleConversationalFallback(text, snapshot, formatCurrency) {
+  const lower = (text || '').toLowerCase();
+  const looksOffTopic = !/\b(?:money|spend|budget|save|rupee|expense|cost|buy|pay|cash|bank|card|upi|split|afford|month|today|week|kharcha|paisa)\b/i.test(lower);
+
+  if (looksOffTopic) {
+    return {
+      replyText:
+        `I'm built specifically for your money, expenses, and smart calculations—so I may not be the best fit for "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}".\n\n` +
+        `Try asking me for a \`Vibe Check\`, \`Weekend Budget\`, quick math like \`15% of 2400\`, \`What was my biggest expense?\`, or logging \`Chai 20\`!`,
+      type: 'conversational_reply',
+      suggestedChips: ['Vibe Check', 'Weekend Budget', 'Biggest Spend', 'Summary']
+    };
+  }
+
   const topCat = snapshot.topCategory?.category;
   const topNote = topCat ? ` Your top category right now is *${topCat}* (${snapshot.topCategory.percent}%).` : '';
   const replyText =
-    `Here's where things stand for you right now: you've spent *${formatCurrency(snapshot.totalSpent)}* so far this month, with *${formatCurrency(snapshot.remainingBudget)}* remaining (*${formatCurrency(snapshot.safeDailyPace)}/day* over ${snapshot.daysRemaining} ${snapshot.daysRemaining === 1 ? 'day' : 'days'}).${topNote}\n\n` +
-    `If you meant to log something (like \`Lunch 150\`), check affordability (\`Can I afford 2000?\`), split a bill (\`Split 1200 between 4\`), or ask a money question, just type it naturally!`;
+    `Here's where things stand: you've spent *${formatCurrency(snapshot.totalSpent)}* this month, leaving *${formatCurrency(snapshot.remainingBudget)}* (*${formatCurrency(snapshot.safeDailyPace)}/day* over ${snapshot.daysRemaining} ${snapshot.daysRemaining === 1 ? 'day' : 'days'}).${topNote}\n\n` +
+    `Want me to run a \`Vibe Check\`, calculate a split, or check a category breakdown?`;
 
   return {
     replyText,
     type: 'conversational_reply',
-    suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', '50/30/20 Rule']
+    suggestedChips: ['Vibe Check', 'Summary', 'Daily Pace', 'Food Spend']
   };
 }
 

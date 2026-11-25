@@ -188,14 +188,16 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     });
     expect(isInputFocusedOnOpen).toBe(false);
 
-    // 2. Comfortable tall mobile height (>= 88% viewport on mobile widths)
+    // 2. Partial floating drawer height on mobile (not full-screen: between 65% and 84% of viewport, with HUD removed)
     const vp = page.viewportSize();
     if (vp && vp.width < 640) {
       const cardBox = await modal.locator('> div').first().boundingBox();
-      expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.88);
+      expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.65);
+      expect(cardBox && cardBox.height).toBeLessThanOrEqual(vp.height * 0.84);
     }
+    await expect(modal.locator('text=SAFE PACE')).toHaveCount(0);
 
-    // 3. Normal conversational chat ("Hello", "My name", small talk, health check)
+    // 3. Normal conversational chat + cool interactive helpers ("Hello", "My name", Vibe Check, Calculator)
     const input = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
 
@@ -207,17 +209,13 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     await sendBtn.click();
     await expect(modal.locator('text=stay strictly on-device').first()).toBeVisible({ timeout: 10000 });
 
-    await input.fill('how are you?');
+    await input.fill('Vibe check my spending');
     await sendBtn.click();
-    await expect(modal.locator('text=doing great').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=Money Vibe Check:').first()).toBeVisible({ timeout: 10000 });
 
-    await input.fill('how am i doing?');
+    await input.fill('15% of 2400');
     await sendBtn.click();
-    await expect(modal.locator('text=Today\'s spend so far:').first()).toBeVisible({ timeout: 10000 });
-
-    await input.fill('thanks');
-    await sendBtn.click();
-    await expect(modal.locator('text=You\'re welcome!').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=₹360').first()).toBeVisible({ timeout: 10000 });
 
     await modal.locator('button[aria-label="Back"]').click();
   });

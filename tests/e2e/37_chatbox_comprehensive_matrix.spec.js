@@ -511,9 +511,13 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const modal = await openChatbox(page);
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
 
-    // Read live remaining safe pool from the telemetry HUD so prior tests don't skew 75%-100% calculation
-    const hudRemainingText = await modal.locator('span:has-text("Remaining") + span').first().innerText().catch(() => '12000');
-    const numericRem = Number(hudRemainingText.replace(/[^0-9.]/g, '')) || 12000;
+    // Query Summary inside chat to read exact live Remaining Balance before 75%-100% check
+    await chatInput.fill('Summary');
+    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
+    await expect(modal.locator('text=Monthly Budget Summary').first()).toBeVisible({ timeout: 10000 });
+    const summaryText = await modal.locator('[data-testid="whatsapp-bubble-bot"]').last().innerText();
+    const remMatch = summaryText.match(/Remaining Balance:\s*₹([0-9,]+)/i);
+    const numericRem = remMatch ? Number(remMatch[1].replace(/,/g, '')) : 12000;
     const target85 = Math.max(100, Math.round(numericRem * 0.85));
 
     await chatInput.fill(`Can I afford ${target85}?`);

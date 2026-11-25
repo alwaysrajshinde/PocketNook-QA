@@ -43,7 +43,7 @@ function formatBotMessage(text) {
   if (!text) return null;
 
   // 1. AFFORDABILITY FINANCIAL DIAGNOSIS CARD
-  if (text.includes('Affordability Financial Diagnosis')) {
+  if (text.includes('Affordability Financial Diagnosis') && text.includes('Planned Purchase:')) {
     const plannedMatch = text.match(/Planned Purchase:\s*([^\n]+)/i);
     const remainingMatch = text.match(/Current (?:Remaining|Pool Balance):\s*([^\n]+)/i);
     const currentPaceMatch = text.match(/Current Daily (?:Pace|Burn):\s*([^\n]+)/i);
@@ -115,7 +115,7 @@ function formatBotMessage(text) {
   }
 
   // 2. SMART BILL SPLIT CALCULATION CARD
-  if (text.includes('Smart Bill Split Calculation')) {
+  if (text.includes('Smart Bill Split Calculation') && text.includes('Total Bill:')) {
     const totalMatch = text.match(/Total Bill:\s*([^\n]+)/i);
     const peopleMatch = text.match(/(?:Number of People|Split Between):\s*([^\n]+)/i);
     const owesMatch = text.match(/Each Person Owes:\s*\*?([^\n*]+)\*?/i);
@@ -160,7 +160,7 @@ function formatBotMessage(text) {
   }
 
   // 3. SAFE DAILY BURN RATE CARD
-  if (text.includes('Safe Daily Burn Rate')) {
+  if (text.includes('Safe Daily Burn Rate') && text.includes('Safe Target:')) {
     const targetMatch = text.match(/Safe Target:\s*\*?([^\n*]+)\*?/i);
     const daysMatch = text.match(/Days (?:Left in Month|Remaining):\s*([^\n]+)/i);
     const poolMatch = text.match(/Remaining Pool:\s*([^\n]+)/i);
@@ -575,6 +575,9 @@ export default function WhatsAppChatboxModal({
   const QUICK_PROMPTS = [
     { id: 'summary', label: 'Summary', text: 'Summary' },
     { id: 'daily-pace', label: 'Daily Pace', text: 'Daily Pace' },
+    { id: 'rule-503020', label: '50/30/20 Rule', text: 'Explain 50/30/20 rule for my budget' },
+    { id: 'emergency-fund', label: 'Emergency Fund', text: 'How much emergency fund do I need?' },
+    { id: 'debt-payoff', label: 'Pay Off Debt', text: 'How should I pay off debt?' },
     { id: 'food-spend', label: 'Food Spend', text: 'Food Spend' },
     { id: 'split-bill', label: 'Split Bill', text: 'Split 2400 between 6 people' },
     { id: 'saving-tips', label: 'Saving Tips', text: 'Saving Tips' },

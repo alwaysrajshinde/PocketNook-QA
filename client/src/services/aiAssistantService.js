@@ -5,11 +5,13 @@
  * 100% Zero-Leakage & Privacy-First:
  * - Operates directly on-device using sanitized financial vectors.
  * - Powered by deterministic NLP, financial pace algorithms, and heuristic reasoning.
+ * - Hybrid Cloud AI Proxy: Seamlessly enhances responses via secure backend LLM proxy when available.
  * - Fully bilingual: understands English, Hindi keywords, and natural conversational Hinglish.
  */
 
-import { parseSmsNotification, CATEGORY_KEYWORDS } from './smsParserService';
-import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from './piiSanitizerService';
+import { parseSmsNotification, CATEGORY_KEYWORDS } from './smsParserService.js';
+import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from './piiSanitizerService.js';
+import { askCopilotAI } from './api.js';
 
 /**
  * Main query dispatcher for the PocketNook Copilot
@@ -19,7 +21,7 @@ import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from './piiSaniti
  * @returns {Promise<Object>} Formatted response object with reply text, actions, and metadata
  */
 export async function processAssistantMessage(rawInput = '', context = {}) {
-  const { sanitizedText, wasSanitized, redactedTypes } = sanitizeFinancialText(rawInput.trim());
+  const { sanitizedText } = sanitizeFinancialText(rawInput.trim());
   const text = sanitizedText;
   const lower = text.toLowerCase().trim();
 
@@ -68,29 +70,93 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     return handleRecentHistory(snapshot, formatCurrency);
   }
 
-  // 8. SAVINGS TIPS & FINANCIAL COACHING
+  // 8. 50/30/20 BUDGET FRAMEWORK
+  if (isRule503020Intent(lower)) {
+    return handle503020Rule(snapshot, formatCurrency);
+  }
+
+  // 9. EMERGENCY FUND CALCULATOR & STRATEGY
+  if (isEmergencyFundIntent(lower)) {
+    return handleEmergencyFund(snapshot, formatCurrency);
+  }
+
+  // 10. DEBT PAYOFF STRATEGY (Avalanche vs. Snowball)
+  if (isDebtPayoffIntent(lower)) {
+    return handleDebtPayoff(snapshot, formatCurrency);
+  }
+
+  // 11. OVER-BUDGET & DEFICIT TRIAGE
+  if (isOverbudgetIntent(lower, snapshot)) {
+    return handleOverbudgetRecovery(snapshot, formatCurrency);
+  }
+
+  // 12. CATEGORY-SPECIFIC REDUCTION PLANS (Dining, Shopping, Utilities)
+  if (isCategoryOptimizationIntent(lower)) {
+    return handleCategoryOptimization(lower, snapshot, formatCurrency);
+  }
+
+  // 13. FUTURE GOAL & PURCHASE PLANNING ("Can I save for X in Y months?")
+  if (isGoalPlanningIntent(lower)) {
+    return handleGoalPlanning(text, lower, snapshot, formatCurrency);
+  }
+
+  // 14. BILINGUAL / HINGLISH SAVINGS & EXPENSE CONTROL
+  if (isBilingualSavingsIntent(lower)) {
+    return handleBilingualSavingsAdvice(snapshot, formatCurrency);
+  }
+
+  // 15. INVESTMENT & WEALTH HYGIENE
+  if (isInvestmentOrWealthIntent(lower)) {
+    return handleInvestmentAdvice(snapshot, formatCurrency);
+  }
+
+  // 16. SAVINGS TIPS & GENERAL FINANCIAL COACHING
   if (isSavingAdviceIntent(lower)) {
     return handleSavingAdvice(snapshot, formatCurrency);
   }
 
-  // 9. BUDGET SUMMARY (Overview)
+  // 17. BUDGET SUMMARY (Overview)
   if (isSummaryIntent(lower)) {
     return handleSummary(snapshot, formatCurrency);
   }
 
-  // 10. MULTI-ITEM BATCH EXPENSE LOGGING (e.g., "50 chai, 120 lunch, 40 auto")
+  // 18. MULTI-ITEM BATCH EXPENSE LOGGING (e.g., "50 chai, 120 lunch, 40 auto")
   const multiItems = extractMultiItemExpenses(text);
   if (multiItems.length > 1) {
     return handleMultiItemLogging(multiItems, snapshot, formatCurrency, onSaveExpense);
   }
 
-  // 11. SINGLE EXPENSE / INCOME LOGGING (via SMS parser)
+  // 19. SINGLE EXPENSE / INCOME LOGGING (via SMS parser)
   const parsed = parseSmsNotification(text);
   if (parsed.success && parsed.amount > 0) {
     return handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSaveExpense);
   }
 
-  // 12. FALLBACK CONVERSATIONAL GUIDANCE
+  // 20. HYBRID EXTERNAL AI MODEL DISPATCH (Secure, Zero-Leakage Proxy)
+  try {
+    const aiRes = await Promise.race([
+      askCopilotAI(text, snapshot),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 4000))
+    ]);
+
+    if (aiRes && aiRes.success && aiRes.replyText) {
+      return {
+        replyText: aiRes.replyText,
+        type: 'ai_copilot_response',
+        model: aiRes.model || 'gemini-2.5-flash',
+        suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Saving Tips']
+      };
+    }
+  } catch (e) {
+    // Graceful offline fallback to on-device financial intelligence brain
+  }
+
+  // 21. ON-DEVICE SMART FINANCIAL SYNTHESIZER
+  if (isGeneralFinancialQuestion(lower)) {
+    return handleSmartFinancialAdvisory(text, snapshot, formatCurrency);
+  }
+
+  // 22. POLITE GUIDANCE ROADMAP
   return handleFallbackResponse(text, snapshot, formatCurrency);
 }
 
@@ -128,16 +194,54 @@ function isRecentHistoryIntent(lower) {
   return /\b(?:last\s*\d*\s*expenses|recent\s*(?:expenses|transactions|activity)|pichla\s*kharcha|history)\b/i.test(lower);
 }
 
+function isRule503020Intent(lower) {
+  return /\b(?:50[\s/-]?30[\s/-]?20|fifty\s*thirty\s*twenty|rule\s*of\s*thumb|budget\s*rule|how\s*to\s*allocate|allocation\s*rule)\b/i.test(lower);
+}
+
+function isEmergencyFundIntent(lower) {
+  return /\b(?:emergency\s*fund|rainy\s*day\s*fund|aapatkaalin|safety\s*cushion|emergency\s*savings|how\s*much\s*emergency)\b/i.test(lower);
+}
+
+function isDebtPayoffIntent(lower) {
+  return /\b(?:debt|loan|credit\s*card|avalanche|snowball|karz|udhari|pay\s*off|emi|interest\s*rate)\b/i.test(lower);
+}
+
+function isOverbudgetIntent(lower, snapshot) {
+  return /\b(?:over\s*budget|exceeded|deficit|kharcha\s*zyada|budget\s*khatam|spent\s*too\s*much|overspent)\b/i.test(lower) ||
+         (snapshot.remainingBudget < 0 && /\b(?:status|how\s*am\s*i\s*doing|kaisa\s*chal\s*raha)\b/i.test(lower));
+}
+
+function isCategoryOptimizationIntent(lower) {
+  return /\b(?:cut\s*down|reduce|save\s*on|spend\s*less)\b/i.test(lower) &&
+         /\b(?:food|dining|grocery|shopping|clothes|delivery|zomato|swiggy|uber|ola|subscription|bills)\b/i.test(lower);
+}
+
+function isGoalPlanningIntent(lower) {
+  return /\b(?:save\s*for|plan\s*to\s*buy|saving\s*target|goal|kharidna\s*hai|phone\s*kharidna|laptop\s*kharidna)\b/i.test(lower) && /\d+/.test(lower);
+}
+
+function isBilingualSavingsIntent(lower) {
+  return /\b(?:paisa\s*kaise\s*bachaye|kharch\s*kaise\s*kam|bachat\s*kaise|paisa\s*bachao|salary\s*kaise\s*manage|paise\s*bachane)\b/i.test(lower);
+}
+
+function isInvestmentOrWealthIntent(lower) {
+  return /\b(?:invest|investment|stocks|mutual\s*fund|sip|fd|fixed\s*deposit|gold|save\s*vs\s*invest|wealth\s*building)\b/i.test(lower);
+}
+
 function isSavingAdviceIntent(lower) {
-  return /\b(?:how\s*to\s*save|saving\s*tips|advice|paisa\s*kaise\s*bachaye|tips|save\s*money|budget\s*plan)\b/i.test(lower);
+  return /\b(?:how\s*to\s*save|saving\s*tips|advice|tips|save\s*money|budget\s*plan|spending\s*advice)\b/i.test(lower);
 }
 
 function isSummaryIntent(lower) {
   return /\b(?:summary|balance|overview|budget|status|kitna\s*(?:paisa|kharcha)?\s*bacha)\b/i.test(lower);
 }
 
+function isGeneralFinancialQuestion(lower) {
+  return /\b(?:money|finance|budget|spend|expense|salary|savings|bank|credit|cash|fund|earn|plan|target|cost|pocket|rupee|invest|future)\b/i.test(lower);
+}
+
 /* ========================================================
-   CONVERSATIONAL HANDLERS
+   CONVERSATIONAL & FINANCIAL ENGINE HANDLERS
    ======================================================== */
 
 function handleGreetingResponse(snapshot, formatCurrency) {
@@ -149,6 +253,7 @@ function handleGreetingResponse(snapshot, formatCurrency) {
     `• *Affordability Diagnosis:* \`Can I afford a 3500 dinner?\`\n` +
     `• *Smart Bill Split:* \`Split 2400 between 5 people\`\n` +
     `• *Deep Analytics:* \`Where is my money going?\` or \`Food spend\`\n` +
+    `• *50/30/20 Plan:* \`Explain 50/30/20 rule for my budget\`\n` +
     `• *Safe Daily Pace:* \`What is my safe daily pace?\`\n` +
     `• *Quick Undo:* Send \`Undo\` to remove the last entry.\n\n` +
     `*Financial Status:* You have *${formatCurrency(snapshot.remainingBudget)}* safe pool remaining this month (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
@@ -156,7 +261,7 @@ function handleGreetingResponse(snapshot, formatCurrency) {
   return {
     replyText,
     type: 'greeting',
-    suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', 'Split Bill'],
+    suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Emergency Fund'],
     actionButtons: [
       { label: 'Check Budget', query: 'Summary' },
       { label: 'Daily Pace', query: 'Daily Pace' }
@@ -191,7 +296,6 @@ function handleUndoIntent(snapshot, formatCurrency, onDeleteExpense) {
 }
 
 function handleBillSplitIntent(text, lower, formatCurrency) {
-  // Extract total bill amount (e.g. 2400)
   const numbers = text.match(/\d+(?:[.,]\d+)?/g) || [];
   if (numbers.length < 2) {
     return {
@@ -201,7 +305,6 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
   }
 
   const nums = numbers.map(n => parseFloat(n.replace(/,/g, '')));
-  // Usually the larger number is the bill amount, the smaller is the head count
   const totalBill = Math.max(...nums);
   const peopleCount = Math.min(...nums);
 
@@ -312,10 +415,204 @@ function handlePaceIntent(snapshot, formatCurrency) {
   };
 }
 
+function handle503020Rule(snapshot, formatCurrency) {
+  const budget = snapshot.budget || 30000;
+  const needs = Math.round(budget * 0.50);
+  const wants = Math.round(budget * 0.30);
+  const savings = Math.round(budget * 0.20);
+  const totalSpent = snapshot.totalSpent;
+  const spendLimit = needs + wants;
+
+  const replyText =
+    `*The 50/30/20 Financial Framework*\n` +
+    `Calibrated to your monthly baseline of *${formatCurrency(budget)}*:\n\n` +
+    `• *50% Needs (${formatCurrency(needs)}):* Essential groceries, rent, utilities, medicines, basic transit.\n` +
+    `• *30% Wants (${formatCurrency(wants)}):* Dining out, cafes, OTT subscriptions, shopping, hobbies.\n` +
+    `• *20% Savings (${formatCurrency(savings)}):* Emergency fund, SIPs, debt acceleration, future goals.\n\n` +
+    `*Current Status:* You have spent *${formatCurrency(totalSpent)}* so far this month. ` +
+    (totalSpent > spendLimit
+      ? `You are past the recommended 80% spending ceiling (${formatCurrency(spendLimit)}). Restrict further spends to essential needs only.`
+      : `You are within the ${formatCurrency(spendLimit)} operational limit with *${formatCurrency(spendLimit - totalSpent)}* buffer before tapping savings.`);
+
+  return {
+    replyText,
+    type: 'budget_framework',
+    suggestedChips: ['Summary', 'Daily Pace', 'Emergency Fund', 'Tips']
+  };
+}
+
+function handleEmergencyFund(snapshot, formatCurrency) {
+  const monthlyBurn = snapshot.totalSpent > 0 ? snapshot.totalSpent : Math.round(snapshot.budget * 0.8) || 20000;
+  const fund3Month = monthlyBurn * 3;
+  const fund6Month = monthlyBurn * 6;
+
+  const replyText =
+    `*Emergency Reserve Architecture*\n` +
+    `Based on your current spending rate of ~*${formatCurrency(monthlyBurn)}/month*:\n\n` +
+    `• *3-Month Baseline Cushion:* *${formatCurrency(fund3Month)}* (Covers sudden medical or job transition)\n` +
+    `• *6-Month Fortress Cushion:* *${formatCurrency(fund6Month)}* (Complete multi-month economic resilience)\n\n` +
+    `*Strategic Placement:*\n` +
+    `1. Keep 1 month in a high-interest liquid savings account with instant UPI access.\n` +
+    `2. Keep the remaining 2–5 months in sweep-in FDs or liquid overnight funds with zero exit loads.\n` +
+    `3. Never lock emergency cash in volatile equities or locking schemes.`;
+
+  return {
+    replyText,
+    type: 'emergency_fund',
+    suggestedChips: ['50/30/20 Rule', 'Summary', 'Daily Pace']
+  };
+}
+
+function handleDebtPayoff(snapshot, formatCurrency) {
+  const replyText =
+    `*Debt Acceleration Blueprint: Avalanche vs Snowball*\n\n` +
+    `• *Method 1: Debt Avalanche (Mathematically Optimal)*\n` +
+    `Pay minimums on everything, then channel all surplus cash to the debt with the *highest interest rate* (e.g. Credit Cards @ 36–42% APR). Saves the most money in interest charges.\n\n` +
+    `• *Method 2: Debt Snowball (Psychological Momentum)*\n` +
+    `Pay minimums on everything, then channel surplus cash to the *smallest balance*. Clearing small debts quickly builds motivational momentum.\n\n` +
+    `*PocketNook Recommendation:* For revolving credit card debt, *always use Avalanche*. A 40% APR card compound will negate any mutual fund gains. Clear high-interest card dues first!`;
+
+  return {
+    replyText,
+    type: 'debt_strategy',
+    suggestedChips: ['Emergency Fund', '50/30/20 Rule', 'Summary']
+  };
+}
+
+function handleOverbudgetRecovery(snapshot, formatCurrency) {
+  const deficit = Math.abs(snapshot.remainingBudget);
+  const days = snapshot.daysRemaining;
+  const topCat = snapshot.topCategory?.category || 'discretionary spends';
+
+  const replyText =
+    `*Over-Budget Recovery & Triage Plan*\n` +
+    (snapshot.remainingBudget < 0
+      ? `Your spending has exceeded the monthly budget by *${formatCurrency(deficit)}* with ${days} days remaining.\n\n`
+      : `Your spending velocity is high with only *${formatCurrency(snapshot.remainingBudget)}* left for ${days} days.\n\n`) +
+    `*Immediate 3-Step Turnaround:*\n` +
+    `1. *Freeze Non-Essential Outflows:* Zero dining out, cafes, or shopping for the next 7 days.\n` +
+    `2. *Tackle Top Category:* Your biggest outflow is *${topCat}*. Cap all secondary purchases here immediately.\n` +
+    `3. *Zero-Spend Days:* Target 3 zero-expense weekdays to halt the burn rate and stabilize your cash position.`;
+
+  return {
+    replyText,
+    type: 'deficit_recovery',
+    suggestedChips: ['Daily Pace', 'Category Spend', 'Tips']
+  };
+}
+
+function handleCategoryOptimization(lower, snapshot, formatCurrency) {
+  let title = 'Spending Reduction Blueprint';
+  let tips = '';
+
+  if (lower.includes('food') || lower.includes('dining') || lower.includes('zomato') || lower.includes('swiggy')) {
+    title = 'Food & Dining Optimization Plan';
+    tips = 
+      `• *Cap Food Delivery to 1x/Week:* Delivery fees, packaging, and platform markups add 35-50% to meal costs.\n` +
+      `• *Meal Prep Staples:* Batch cooking lunch on Sundays cuts weekday office dining expenses by up to 60%.\n` +
+      `• *The ₹30 Chai/Snack Audit:* Multiple daily micro-spends average ~₹1,800/month. Keep a dedicated weekly cash envelope for snacks.`;
+  } else if (lower.includes('shopping') || lower.includes('clothes')) {
+    title = 'Shopping & Discretionary Control';
+    tips = 
+      `• *The 48-Hour Cooling Rule:* For any non-essential purchase > ₹1,000, wait 48 hours before checking out. 70% of impulse desires fade.\n` +
+      `• *Cost-Per-Use Formula:* Divide item price by projected uses. If you won't use it 30+ times, rent or skip it.\n` +
+      `• *Unsubscribe from Sale Push Alerts:* Delete shopping app notification permissions to remove artificial urgency.`;
+  } else {
+    title = 'Recurring Bills & Subscriptions Audit';
+    tips = 
+      `• *Ghost Subscription Purge:* Review streaming, gym, and app renewals. Cancel anything unused in the last 30 days.\n` +
+      `• *Switch to Annual Plans:* For services you use daily (broadband, cloud), annual billing yields 15-25% instant savings.\n` +
+      `• *Family Sharing Plans:* Pool music and OTT subscriptions with family or roommates to split costs.`;
+  }
+
+  const replyText =
+    `*${title}*\n\n` +
+    `${tips}\n\n` +
+    `*Current Daily Safe Pace:* ${formatCurrency(snapshot.safeDailyPace)}/day. Trimming these leaks will immediately boost your end-of-month savings pool!`;
+
+  return {
+    replyText,
+    type: 'category_optimization',
+    suggestedChips: ['Daily Pace', 'Summary', '50/30/20 Rule']
+  };
+}
+
+function handleGoalPlanning(text, lower, snapshot, formatCurrency) {
+  const numbers = text.match(/\d+(?:[.,]\d+)?/g) || [];
+  const targetAmount = numbers.length > 0 ? parseFloat(numbers[0].replace(/,/g, '')) : 25000;
+  const months = numbers.length > 1 ? Math.min(24, Math.max(1, parseInt(numbers[1], 10))) : 6;
+  const monthlyNeeded = Math.round(targetAmount / months);
+
+  const replyText =
+    `*Goal Feasibility & Savings Roadmap*\n` +
+    `*Target Goal:* ${formatCurrency(targetAmount)}\n` +
+    `*Target Timeline:* ${months} months\n` +
+    `*Required Monthly Savings:* *${formatCurrency(monthlyNeeded)}/month*\n\n` +
+    `*Feasibility Assessment:*\n` +
+    `Your current monthly safe remaining pool is *${formatCurrency(snapshot.remainingBudget)}*. ` +
+    (snapshot.remainingBudget >= monthlyNeeded
+      ? `This goal is *achievable*! Saving ${formatCurrency(monthlyNeeded)} leaves you with a comfortable buffer each month.`
+      : `This will require tighter discipline. Consider extending your timeline to ${Math.ceil(targetAmount / (Math.max(snapshot.remainingBudget, 1000)))} months or cutting discretionary channels.`);
+
+  return {
+    replyText,
+    type: 'goal_planning',
+    suggestedChips: ['Summary', 'Daily Pace', 'Tips']
+  };
+}
+
+function handleBilingualSavingsAdvice(snapshot, formatCurrency) {
+  const topCat = snapshot.topCategory?.category || 'food aur shopping';
+  const pace = snapshot.safeDailyPace;
+
+  const replyText =
+    `*Smart Savings Plan (पैसे बचाने का आसान तरीका)*\n\n` +
+    `1. *Safe Daily Spending Target:* Aapka daily kharch target *${formatCurrency(pace)}/day* hai. Iske andar rehne par mahine ke ant me paisa bachega.\n` +
+    `2. *Pay Yourself First:* Salary aate hi sabse pehle 20% savings alag account ya SIP me transfer karein, baki 80% se kharcha chalayein.\n` +
+    `3. *Top Category Check:* Aapka sabse bada kharcha *${topCat}* me ho raha hai. Isme 15% ki katauti se aaram se mahine ke ₹1,500–₹3,000 bach sakte hain.\n` +
+    `4. *24 Ghante Ka Niyam:* Kisi bhi ₹1,000+ ki cheez ko khareedne se pehle 24 ghante intezaar karein; impulse shopping ruk jayegi.`;
+
+  return {
+    replyText,
+    type: 'bilingual_advice',
+    suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule']
+  };
+}
+
+function handleInvestmentAdvice(snapshot, formatCurrency) {
+  const replyText =
+    `*Core Wealth Building & Investment Principles*\n\n` +
+    `1. *First Priority — Emergency Fund:* Have 3–6 months of expenses in a liquid FD or high-yield account before investing in market instruments.\n` +
+    `2. *Eliminate High-Interest Debt:* Never invest in equities while carrying 36%+ credit card debt. Pay off cards first.\n` +
+    `3. *Low-Cost Index Funds & SIPs:* Invest in broad market index funds (Nifty 50) via monthly disciplined SIPs for a 5+ year horizon.\n` +
+    `4. *Never Speculate Essential Capital:* Money you will need within the next 12–24 months belongs in safe, capital-preserving instruments (FD/Arbitrage/Liquid funds).`;
+
+  return {
+    replyText,
+    type: 'investment_advice',
+    suggestedChips: ['Emergency Fund', 'Debt Payoff', 'Summary']
+  };
+}
+
+function handleSmartFinancialAdvisory(text, snapshot, formatCurrency) {
+  const replyText =
+    `*PocketNook Financial Intelligence Diagnosis*\n\n` +
+    `Regarding your query on *"_` + text.slice(0, 45) + `_"*:\n\n` +
+    `• *Budget Health:* You have spent *${formatCurrency(snapshot.totalSpent)}* with *${formatCurrency(snapshot.remainingBudget)}* remaining this cycle.\n` +
+    `• *Daily Discipline:* Your safe daily spending pace is *${formatCurrency(snapshot.safeDailyPace)}/day* across the next ${snapshot.daysRemaining} days.\n` +
+    `• *Primary Recommendation:* Maintain consistency. Prioritize building a 3-month reserve and keeping daily spends below ${formatCurrency(snapshot.safeDailyPace)}.\n\n` +
+    `Ask me about \`50/30/20 rule\`, \`Emergency fund\`, \`Daily pace\`, or \`Split bill\` for deeper analysis!`;
+
+  return {
+    replyText,
+    type: 'smart_advisory',
+    suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Emergency Fund']
+  };
+}
+
 function handleCategoryQuery(lower, snapshot, formatCurrency) {
   const categories = snapshot.categoryBreakdown;
 
-  // Check if user named a specific category (e.g. food, travel, groceries)
   for (const catRule of CATEGORY_KEYWORDS) {
     const isCategoryNamed = catRule.keywords.some(k => lower.includes(k)) || lower.includes(catRule.category.toLowerCase());
     if (isCategoryNamed) {
@@ -335,7 +632,6 @@ function handleCategoryQuery(lower, snapshot, formatCurrency) {
     }
   }
 
-  // General category breakdown
   if (categories.length === 0) {
     return {
       replyText: `You haven't recorded any category expenses yet this month. Start by logging something like \`Chai 20\`!`,
@@ -423,7 +719,6 @@ function handleSummary(snapshot, formatCurrency) {
 }
 
 function extractMultiItemExpenses(text) {
-  // Matches comma-separated or "and" separated lists: e.g. "50 chai, 100 lunch, 40 auto"
   const parts = text.split(/[,;\n]|\band\b/i).map(p => p.trim()).filter(Boolean);
   const parsedItems = [];
 
@@ -513,19 +808,20 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
 
 function handleFallbackResponse(text, snapshot, formatCurrency) {
   const replyText =
-    `*I'm not quite sure how to process:* _"${text}"_\n\n` +
-    `*Here are things you can ask me:*\n` +
-    `• \`Chai 20\` or \`Lunch 150 upi\` (Record expense)\n` +
-    `• \`50 milk, 120 fruits\` (Batch log items)\n` +
+    `*I'm here to help with your finances:*\n\n` +
+    `• \`50/30/20 rule\` (Personalized budget allocation)\n` +
+    `• \`Emergency fund\` (Reserve calculation & strategy)\n` +
+    `• \`How to pay off debt\` (Avalanche vs Snowball)\n` +
     `• \`Can I afford 3500?\` (Affordability diagnosis)\n` +
-    `• \`Split 1800 by 4\` (Calculate bill split)\n` +
-    `• \`Where is my money going?\` (Category breakdown)\n` +
-    `• \`Daily pace\` or \`Summary\` (Budget check)\n` +
-    `• \`Undo\` (Delete last recorded expense)`;
+    `• \`Daily pace\` (Safe daily burn rate target)\n` +
+    `• \`Paisa kaise bachaye\` (Hinglish financial habits)\n` +
+    `• \`Chai 20\` or \`Lunch 150 upi\` (Record expense)\n` +
+    `• \`Split 1800 by 4\` (Calculate bill split)\n\n` +
+    `*Current Status:* Safe pool remaining: *${formatCurrency(snapshot.remainingBudget)}* (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
 
   return {
     replyText,
     type: 'help_guidance',
-    suggestedChips: ['Summary', 'Daily Pace', 'Categories', 'Tips']
+    suggestedChips: ['Summary', 'Daily Pace', '50/30/20 Rule', 'Emergency Fund']
   };
 }

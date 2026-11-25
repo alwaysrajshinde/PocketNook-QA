@@ -734,4 +734,95 @@ router.post('/webhook/whatsapp', (req, res) => {
   }
 });
 
+// ========================================================
+// 10. SECURE AI COPILOT PROXY (ZERO-LEAKAGE)
+// ========================================================
+router.post('/ai/copilot-chat', resolveUser, async (req, res) => {
+  try {
+    const { prompt, snapshot } = req.body || {};
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ success: false, error: 'Missing prompt text' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.json({
+        success: false,
+        useLocalBrain: true,
+        message: 'No GEMINI_API_KEY configured; fallback to local on-device intelligence brain.'
+      });
+    }
+
+    // Defense-in-depth safe prompt truncation and non-PII snapshot metrics
+    const safePrompt = String(prompt).slice(0, 1000);
+    const safeSnapshot = {
+      budget: Number(snapshot?.budget || 0),
+      totalSpent: Number(snapshot?.totalSpent || 0),
+      remainingBudget: Number(snapshot?.remainingBudget || 0),
+      safeDailyPace: Number(snapshot?.safeDailyPace || 0),
+      daysRemaining: Number(snapshot?.daysRemaining || 0),
+      topCategory: snapshot?.topCategory?.category || 'None',
+      topCategorySpent: Number(snapshot?.topCategory?.spent || 0)
+    };
+
+    const systemInstruction = 
+      "You are PocketNook Financial Intelligence Copilot, a certified, privacy-first personal wealth and budgeting advisor. " +
+      "The user is asking a financial or budgeting question. Give ultra-clear, concise, actionable advice. " +
+      "Use bold headings (*Heading*), bullet points (• Item), and numbers in ₹ format where relevant. " +
+      "Reference their monthly numbers when appropriate: " +
+      `Budget: ₹${safeSnapshot.budget}, Spent so far: ₹${safeSnapshot.totalSpent}, Remaining: ₹${safeSnapshot.remainingBudget}, ` +
+      `Days remaining: ${safeSnapshot.daysRemaining}, Safe daily burn rate: ₹${safeSnapshot.safeDailyPace}/day, ` +
+      `Top spending channel: ${safeSnapshot.topCategory} (₹${safeSnapshot.topCategorySpent}). ` +
+      "Keep answers under 150 words. Do not provide speculative investment/crypto advice. Focus on budgeting, saving, debt reduction, and disciplined spending.";
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const geminiPayload = {
+      systemInstruction: {
+        parts: [{ text: systemInstruction }]
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: safePrompt }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 600
+      }
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const apiRes = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiPayload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!apiRes.ok) {
+      console.warn('Gemini API returned error status:', apiRes.status);
+      return res.json({ success: false, useLocalBrain: true });
+    }
+
+    const data = await apiRes.json();
+    const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      return res.json({ success: false, useLocalBrain: true });
+    }
+
+    return res.json({
+      success: true,
+      model: 'gemini-2.5-flash',
+      replyText: candidateText.trim()
+    });
+  } catch (err) {
+    console.warn('AI copilot-chat endpoint error, falling back to local brain:', err.message);
+    return res.json({ success: false, useLocalBrain: true, error: err.message });
+  }
+});
+
 module.exports = router;

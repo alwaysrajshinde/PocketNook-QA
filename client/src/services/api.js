@@ -872,3 +872,23 @@ export async function restoreBackup(file) {
   if (!json.success) throw new Error(json.error || 'Failed to restore backup');
   return json;
 }
+
+export async function askCopilotAI(prompt, snapshot) {
+  try {
+    const res = await fetch(`${API_BASE}/ai/copilot-chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ prompt, snapshot })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    return { success: false, useLocalBrain: true };
+  } catch (e) {
+    return { success: false, useLocalBrain: true, error: e.message };
+  }
+}
+

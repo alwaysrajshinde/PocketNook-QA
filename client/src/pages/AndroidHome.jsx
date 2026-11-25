@@ -4,7 +4,7 @@ import {
   CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
-import FiveOptionsShowcase from '../components/FiveOptionsShowcase';
+import SmartActionHub from '../components/SmartActionHub';
 import { 
   getRecurringSubscriptions, 
   getUpcomingRenewals, 
@@ -261,22 +261,16 @@ export default function AndroidHome({
       </div>
 
       {/* ========================================================
-          Interactive 5-Options Showcase (Replaces SpeedChips for testing 1-by-1)
+          Smart Action Hub (Zero-number quick capture & pace pulse)
          ======================================================== */}
-      <FiveOptionsShowcase
+      <SmartActionHub
         dashboardData={dashboardData}
-        categories={categories}
-        selectedMonth={selectedMonth}
-        hideAmounts={hideAmounts}
-        formatCurrency={formatCurrency}
-        upcomingRenewals={upcomingRenewals}
-        onQuickAddExpense={onQuickAddExpense}
         onOpenAddExpense={onOpenAddExpense}
-        onEditTransaction={onEditTransaction}
-        onDeleteTransaction={onDeleteTransaction}
-        onOpenAddForDate={onOpenAddForDate}
+        onOpenSmsParser={onOpenSmsParser}
+        onOpenReceiptScanner={onOpenReceiptScanner}
+        onOpenWhatsAppAssistant={onOpenWhatsAppAssistant}
+        onOpenRecurringModal={onOpenRecurringModal}
         onViewAllCategories={onViewAllCategories}
-        onViewAllTransactions={onViewAllTransactions}
       />
 
 

@@ -2,7 +2,7 @@
 const { test, expect } = require('../fixtures/auth.fixture');
 const { cleanTestUsers } = require('../helpers/dbHelper');
 
-test.describe('Area 39: Five Practical Home Workflows Showcase', () => {
+test.describe('Area 39: Zero-Number Smart Action Hub', () => {
   test.afterAll(() => {
     cleanTestUsers();
   });
@@ -19,33 +19,28 @@ test.describe('Area 39: Five Practical Home Workflows Showcase', () => {
     }
   }
 
-  test('39.1: All 5 meaningful workflows render, switch cleanly, and parse multi-expense Quick-Drop', async ({ page, authHelpers }) => {
+  test('39.1: Smart Action Hub displays qualitative pace without numeric clutter and saves checklists cleanly', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await ensureCleanHome(page);
 
-    const showcase = page.locator('[data-testid="five-options-showcase"]').first();
-    await expect(showcase).toBeVisible({ timeout: 10000 });
+    const hub = page.locator('[data-testid="smart-action-hub"]').first();
+    await expect(hub).toBeVisible({ timeout: 10000 });
+    await expect(hub.locator('[data-testid="pulse-status-badge"]')).toBeVisible();
+    await expect(hub.locator('[data-testid="category-color-ribbon"]')).toBeVisible();
 
-    // Option 1: Month-End Runway & Fixed Split
-    await expect(page.locator('[data-testid="option-runway-card"]').first()).toBeVisible();
+    // Ensure the hub stays purely qualitative (zero currency figures)
+    const hubText = await hub.innerText();
+    expect(hubText.includes('₹')).toBe(false);
 
-    // Option 2: Did-I-Log-It Today + Auto-Learned Usuals
-    await page.locator('[data-testid="preview-option-tab-2"]').first().click();
-    await expect(page.locator('[data-testid="option-usuals-card"]').first()).toBeVisible();
+    // Add a pending spend reminder note cleanly
+    await hub.locator('[data-testid="hub-note-input"]').fill('Pay broadband bill');
+    await hub.locator('[data-testid="hub-note-add-btn"]').click();
+    await expect(hub).toContainText('Pay broadband bill');
 
-    // Option 3: Multi-Expense & SMS Quick-Drop Bar
-    await page.locator('[data-testid="preview-option-tab-3"]').first().click();
-    const fastDrop = page.locator('[data-testid="option-fast-drop-card"]').first();
-    await expect(fastDrop).toBeVisible();
-    await page.locator('[data-testid="fast-drop-sample-btn"]').first().click();
-    await expect(page.locator('[data-testid="fast-drop-save-all-btn"]').first()).toContainText('Save All (3 entries)');
-
-    // Option 4: UPI / Credit Card / Cash Watcher
-    await page.locator('[data-testid="preview-option-tab-4"]').first().click();
-    await expect(page.locator('[data-testid="option-wallets-card"]').first()).toBeVisible();
-
-    // Option 5: Leak, Spike & Duplicate Audit
-    await page.locator('[data-testid="preview-option-tab-5"]').first().click();
-    await expect(page.locator('[data-testid="option-inspector-card"]').first()).toBeVisible();
+    // Quick tools are visible and interactive
+    await expect(hub.locator('[data-testid="hub-action-scan"]')).toBeVisible();
+    await expect(hub.locator('[data-testid="hub-action-sms"]')).toBeVisible();
+    await expect(hub.locator('[data-testid="hub-action-chat"]')).toBeVisible();
+    await expect(hub.locator('[data-testid="hub-action-bills"]')).toBeVisible();
   });
 });

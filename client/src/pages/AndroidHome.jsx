@@ -4,7 +4,8 @@ import {
   CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
-import MoneyAuraStoryCard from '../components/MoneyAuraStoryCard';
+import SpeedChips from '../components/SpeedChips';
+import SpendVisualGraphCard from '../components/SpendVisualGraphCard';
 import { 
   getRecurringSubscriptions, 
   getUpcomingRenewals, 
@@ -261,11 +262,12 @@ export default function AndroidHome({
       </div>
 
       {/* ========================================================
-          Live Money Aura & Daily Rhythm Story (Zero-Number Experience)
+          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
          ======================================================== */}
-      <MoneyAuraStoryCard
-        dashboardData={dashboardData}
-        selectedMonth={selectedMonth}
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
       />
 
 
@@ -302,133 +304,12 @@ export default function AndroidHome({
       )}
 
       {/* ========================================================
-          3. Top Categories Card (Matching Android UI Reference)
+          3. Visual Spend Pulse Graph (Replaces Top Categories & Recent Activity)
          ======================================================== */}
-      <div className="bg-white dark:bg-[#16132A] rounded-3xl p-4 sm:p-5 border border-slate-100 dark:border-white/10 shadow-xs space-y-3.5 transition-colors interactive-card card-hover-lift">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('topCategories', 'Top Categories')}
-          </h3>
-          <button
-            onClick={onViewAllCategories}
-            className="text-xs font-semibold text-[#6C47FF] dark:text-[#A78BFA] hover:underline flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <span>{t('seeAll', 'View All')}</span>
-            <ArrowRight size={13} />
-          </button>
-        </div>
-
-        <div className="space-y-3 pt-0.5">
-          {top_categories.slice(0, 3).map((cat) => (
-            <div key={cat.name} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs"
-                    style={{ backgroundColor: `${cat.color || '#6C47FF'}18` }}
-                  >
-                    <CategoryIcon
-                      name={cat.name}
-                      icon={cat.icon}
-                      color={cat.color || '#6C47FF'}
-                      size={15}
-                    />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      {cat.name}
-                    </span>
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500 ml-1.5 font-medium">
-                      {cat.tx_count} txs
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-xs font-black text-slate-900 dark:text-white block">
-                    {maskAmount(cat.total)}
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                    {cat.percentage}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Category Progress Bar */}
-              <div className="w-full h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${Math.min(cat.percentage, 100)}%`,
-                    backgroundColor: cat.color || '#6C47FF'
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-
-          {top_categories.length === 0 && (
-            <div className="py-4 text-center text-xs text-slate-400">
-              No expenses recorded for this month
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ========================================================
-          3.5. Recent Activity Card (Mobile Activity Stream)
-         ======================================================== */}
-      <div className="bg-white dark:bg-[#16132A] rounded-3xl p-4 sm:p-5 border border-slate-100 dark:border-white/10 shadow-xs space-y-3 transition-colors interactive-card card-hover-lift">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('recentActivity', 'Recent Activity')}
-          </h3>
-          <button
-            onClick={onViewAllTransactions}
-            className="text-xs font-semibold text-[#6C47FF] dark:text-[#A78BFA] hover:underline flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <span>{t('seeAll', 'See All')}</span>
-            <ArrowRight size={13} />
-          </button>
-        </div>
-
-        <div className="divide-y divide-slate-50 dark:divide-white/5">
-          {recent_transactions && recent_transactions.length > 0 ? (
-            recent_transactions.slice(0, 3).map((tx) => (
-              <div
-                key={tx.id}
-                onClick={() => onEditTransaction && onEditTransaction(tx)}
-                className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 px-2 -mx-2 rounded-xl transition-all tx-row active:scale-[0.99]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: `${tx.color || '#6C47FF'}18` }}
-                  >
-                    <CategoryIcon name={tx.category} icon={tx.icon} color={tx.color} size={15} />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block truncate max-w-[150px]">
-                      {tx.description || tx.category}
-                    </span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                      {tx.date ? new Date(tx.date).toLocaleDateString('default', { day: 'numeric', month: 'short' }) : 'Today'} · {tx.payment_mode}
-                    </span>
-                  </div>
-                </div>
-
-                <span className={`text-xs font-extrabold ${tx.is_refund || tx.amount < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                  {tx.is_refund || tx.amount < 0 ? `+${maskAmount(Math.abs(tx.amount))}` : maskAmount(tx.amount)}
-                </span>
-              </div>
-            ))
-          ) : (
-            <div className="py-3 text-center text-xs text-slate-400">
-              No recent activity yet
-            </div>
-          )}
-        </div>
-      </div>
+      <SpendVisualGraphCard
+        dashboardData={dashboardData}
+        selectedMonth={selectedMonth}
+      />
     </div>
   );
 }

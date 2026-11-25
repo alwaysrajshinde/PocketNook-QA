@@ -41,12 +41,15 @@ test.describe('Area B: Dashboard Metrics, Calculations & States', () => {
     await expect(page.locator('text=This Month').first()).toBeVisible();
   });
 
-  test('B4: Top Categories breakdown is displayed with icons and percentages', async ({ page, authHelpers }) => {
+  test('B4: Top Categories breakdown or Money Aura Story is displayed cleanly', async ({ page, authHelpers }, testInfo) => {
     await authHelpers.loginAsRaj();
 
-    // Scroll to Top Categories section
-    const topCats = page.locator('text=Top Categories');
-    await expect(topCats.first()).toBeVisible();
+    if (testInfo.project.name === 'chromium-mobile') {
+      await expect(page.locator('[data-testid="spend-graph-card"]').first()).toBeVisible();
+    } else {
+      const topCats = page.locator('text=Top Categories');
+      await expect(topCats.first()).toBeVisible();
+    }
   });
 
   test('B5: Month selector updates dashboard metrics for selected period', async ({ page, authHelpers }) => {

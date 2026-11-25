@@ -2,7 +2,7 @@
 const { test, expect } = require('../fixtures/auth.fixture');
 const { cleanTestUsers } = require('../helpers/dbHelper');
 
-test.describe('Area 39: Live Money Aura & Daily Rhythm Story', () => {
+test.describe('Area 39: Visual Spend Pulse Graph (Wave, Radar & Orbit)', () => {
   test.afterAll(() => {
     cleanTestUsers();
   });
@@ -19,29 +19,30 @@ test.describe('Area 39: Live Money Aura & Daily Rhythm Story', () => {
     }
   }
 
-  test('39.1: Money Aura Story renders with zero numbers and navigates Aura, Rhythm, and Badges slides smoothly', async ({ page, authHelpers }) => {
+  test('39.1: SpeedChips stays intact and Visual Spend Pulse switches Wave, Radar, and Orbit graphs without currency clutter', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await ensureCleanHome(page);
 
-    const card = page.locator('[data-testid="money-aura-card"]').first();
+    const card = page.locator('[data-testid="spend-graph-card"]').first();
     await expect(card).toBeVisible({ timeout: 10000 });
-    await expect(card.locator('[data-testid="aura-slide-aura"]')).toBeVisible();
+    await expect(page.locator('[data-testid="speed-chips-strip"]').first()).toBeVisible();
 
-    // Slide 1 strictly zero digits & zero currency symbol
-    const slide1Text = await card.innerText();
-    expect(/\d/.test(slide1Text)).toBe(false);
-    expect(slide1Text.includes('₹')).toBe(false);
+    // Wave View
+    await expect(card.locator('[data-testid="graph-view-wave"]')).toBeVisible();
+    const waveText = await card.innerText();
+    expect(waveText.includes('₹')).toBe(false);
+    expect(waveText.includes('%')).toBe(false);
 
-    // Slide 2: Rhythm wave
-    await card.locator('[data-testid="aura-progress-rhythm"]').click();
-    await expect(card.locator('[data-testid="aura-slide-rhythm"]')).toBeVisible();
-    const slide2Text = await card.innerText();
-    expect(/\d/.test(slide2Text)).toBe(false);
+    // Switch to Radar View
+    await card.locator('[data-testid="graph-mode-radar"]').click();
+    await expect(card.locator('[data-testid="graph-view-radar"]')).toBeVisible();
+    const radarText = await card.innerText();
+    expect(radarText.includes('₹')).toBe(false);
 
-    // Slide 3: Badges
-    await card.locator('[data-testid="aura-progress-badges"]').click();
-    await expect(card.locator('[data-testid="aura-slide-badges"]')).toBeVisible();
-    const slide3Text = await card.innerText();
-    expect(/\d/.test(slide3Text)).toBe(false);
+    // Switch to Orbit View
+    await card.locator('[data-testid="graph-mode-orbit"]').click();
+    await expect(card.locator('[data-testid="graph-view-orbit"]')).toBeVisible();
+    const orbitText = await card.innerText();
+    expect(orbitText.includes('₹')).toBe(false);
   });
 });

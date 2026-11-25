@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import CustomDropdown from '../components/CustomDropdown';
-import MoneyAuraStoryCard from '../components/MoneyAuraStoryCard';
+import SpeedChips from '../components/SpeedChips';
+import SpendVisualGraphCard from '../components/SpendVisualGraphCard';
 import {
   getRecurringSubscriptions,
   getUpcomingRenewals,
@@ -335,9 +336,18 @@ export default function Home({
       </div>
 
       {/* ========================================================
-          Live Money Aura & Daily Rhythm Story (Zero-Number Experience)
+          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
          ======================================================== */}
-      <MoneyAuraStoryCard
+      <SpeedChips
+        onQuickAdd={onQuickAddExpense}
+        categories={categories}
+        formatCurrency={formatCurrency}
+      />
+
+      {/* ========================================================
+          Visual Spend Pulse Graph (Zero-Number Wave / Radar / Orbit)
+         ======================================================== */}
+      <SpendVisualGraphCard
         dashboardData={dashboardData}
         selectedMonth={selectedMonth}
       />

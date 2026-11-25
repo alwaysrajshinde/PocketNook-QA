@@ -142,24 +142,24 @@ function isSummaryIntent(lower) {
 
 function handleGreetingResponse(snapshot, formatCurrency) {
   const replyText = 
-    `👋 *Hey there! I'm your PocketNook Copilot.*\n\n` +
-    `I'm your all-in-one private financial assistant. Here is what I can do for you:\n\n` +
-    `⚡ *1-Tap Logging:* \`Chai 20\` or \`Lunch 150 card\`\n` +
-    `📦 *Batch Expenses:* \`50 chai, 120 lunch, 40 auto\`\n` +
-    `💡 *Affordability:* \`Can I afford a 3000 dinner?\`\n` +
-    `👥 *Split Bills:* \`Split 2400 between 5 people\`\n` +
-    `📊 *Deep Analytics:* \`Where is my money going?\` or \`Food spend\`\n` +
-    `⚡ *Burn Rate:* \`What is my safe daily pace?\`\n` +
-    `↩️ *Quick Undo:* Send \`Undo\` to remove the last entry.\n\n` +
-    `💰 *Quick Status:* You have *${formatCurrency(snapshot.remainingBudget)}* remaining this month (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
+    `*PocketNook Copilot Active*\n\n` +
+    `Your private, on-device financial intelligence engine. Here is what I can do for you:\n\n` +
+    `• *Instant Logging:* \`Chai 20\` or \`Lunch 150 card\`\n` +
+    `• *Multi-Item Batch:* \`50 chai, 120 lunch, 40 auto\`\n` +
+    `• *Affordability Diagnosis:* \`Can I afford a 3500 dinner?\`\n` +
+    `• *Smart Bill Split:* \`Split 2400 between 5 people\`\n` +
+    `• *Deep Analytics:* \`Where is my money going?\` or \`Food spend\`\n` +
+    `• *Safe Daily Pace:* \`What is my safe daily pace?\`\n` +
+    `• *Quick Undo:* Send \`Undo\` to remove the last entry.\n\n` +
+    `*Financial Status:* You have *${formatCurrency(snapshot.remainingBudget)}* safe pool remaining this month (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
 
   return {
     replyText,
     type: 'greeting',
     suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', 'Split Bill'],
     actionButtons: [
-      { label: '📊 Check Budget', query: 'Summary' },
-      { label: '⚡ Daily Pace', query: 'Daily Pace' }
+      { label: 'Check Budget', query: 'Summary' },
+      { label: 'Daily Pace', query: 'Daily Pace' }
     ]
   };
 }
@@ -168,7 +168,7 @@ function handleUndoIntent(snapshot, formatCurrency, onDeleteExpense) {
   const lastTx = snapshot.safeTransactions[0];
   if (!lastTx) {
     return {
-      replyText: `🤔 No recent transactions found in this month to undo.`,
+      replyText: `No recent transactions found in this billing cycle to undo.`,
       type: 'undo_failed'
     };
   }
@@ -178,11 +178,10 @@ function handleUndoIntent(snapshot, formatCurrency, onDeleteExpense) {
   }
 
   const replyText =
-    `↩️ *Transaction Undone & Removed!*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `🗑️ *Removed:* ₹${lastTx.amount} for *${lastTx.merchant}* (${lastTx.category})\n` +
-    `💳 *Mode:* ${lastTx.paymentMode}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `✨ Your updated remaining balance is *${formatCurrency(snapshot.remainingBudget + lastTx.amount)}*.`;
+    `*Transaction Undone & Removed!*\n` +
+    `*Removed:* ₹${lastTx.amount} for *${lastTx.merchant}* (${lastTx.category})\n` +
+    `*Payment Mode:* ${lastTx.paymentMode}\n\n` +
+    `Updated remaining balance is *${formatCurrency(snapshot.remainingBudget + lastTx.amount)}*.`;
 
   return {
     replyText,
@@ -196,7 +195,7 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
   const numbers = text.match(/\d+(?:[.,]\d+)?/g) || [];
   if (numbers.length < 2) {
     return {
-      replyText: `🤔 To split a bill, please specify the total amount and number of people.\n\n*Example:* \`Split 2400 between 6 people\``,
+      replyText: `To split a bill, please specify the total amount and number of people.\n\n*Example:* \`Split 2400 between 6 people\``,
       type: 'split_error'
     };
   }
@@ -208,7 +207,7 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
 
   if (peopleCount <= 0) {
     return {
-      replyText: `⚠️ The number of people must be at least 1.`,
+      replyText: `The number of people must be at least 1.`,
       type: 'split_error'
     };
   }
@@ -216,12 +215,11 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
   const perPerson = Math.round((totalBill / peopleCount) * 100) / 100;
 
   const replyText =
-    `👥 *Smart Bill Split Calculation*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `🧾 *Total Bill:* ${formatCurrency(totalBill)}\n` +
-    `👤 *Number of People:* ${peopleCount}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `💵 *Each Person Owes:* *${formatCurrency(perPerson)}*\n\n` +
-    `💡 *Want me to log your share?*\nReply \`Lunch ${Math.round(perPerson)} upi\` to log it immediately!`;
+    `*Smart Bill Split Calculation*\n` +
+    `*Total Bill:* ${formatCurrency(totalBill)}\n` +
+    `*Split Between:* ${peopleCount} people\n` +
+    `*Each Person Owes:* *${formatCurrency(perPerson)}*\n\n` +
+    `Want me to log your share? Reply \`Lunch ${Math.round(perPerson)} upi\` to record it immediately.`;
 
   return {
     replyText,
@@ -229,8 +227,8 @@ function handleBillSplitIntent(text, lower, formatCurrency) {
     data: { totalBill, peopleCount, perPerson },
     suggestedChips: [`Log Share ${Math.round(perPerson)}`, 'Summary'],
     actionButtons: [
-      { label: `➕ Log My Share (${formatCurrency(perPerson)})`, query: `Dinner ${Math.round(perPerson)} upi` },
-      { label: '📊 Check Budget', query: 'Summary' }
+      { label: `Log My Share (${formatCurrency(perPerson)})`, query: `Dinner ${Math.round(perPerson)} upi` },
+      { label: 'Check Budget', query: 'Summary' }
     ]
   };
 }
@@ -239,7 +237,7 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
   const matches = lower.match(/\d+(?:[.,]\d+)?/g) || [];
   if (matches.length === 0) {
     return {
-      replyText: `🤔 Please specify the amount you want to spend.\n\n*Example:* \`Can I afford a 4500 smartwatch?\``,
+      replyText: `Please specify the amount you want to spend.\n\n*Example:* \`Can I afford a 4500 smartwatch?\``,
       type: 'affordability_error'
     };
   }
@@ -253,34 +251,29 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
   const newPace = days > 0 ? Math.round(newRemaining / days) : 0;
 
   let advice = '';
-  let statusEmoji = '✨';
 
   if (newRemaining < 0) {
-    statusEmoji = '🚨';
     advice = 
       `*Verdict: Budget Risk Detected.*\n` +
       `Spending ${formatCurrency(plannedAmount)} will push you *${formatCurrency(Math.abs(newRemaining))} over budget* with ${days} days remaining in November. ` +
       `Recommendation: Hold off until next month or reallocate from another category.`;
   } else if (newPace < currentPace * 0.45) {
-    statusEmoji = '⚠️';
     advice = 
       `*Verdict: Tight Squeeze.*\n` +
-      `You can technically afford it, but your safe daily spending will shrink dramatically from *${formatCurrency(currentPace)}/day* down to *${formatCurrency(newPace)}/day* for the next ${days} days. ` +
-      `Recommendation: Keep dining and discretionary shopping minimal for the rest of the month!`;
+      `You can technically afford it, but your safe daily spending will shrink from *${formatCurrency(currentPace)}/day* down to *${formatCurrency(newPace)}/day* for the next ${days} days. ` +
+      `Recommendation: Keep dining and discretionary shopping minimal for the rest of the month.`;
   } else {
-    statusEmoji = '🎉';
     advice = 
       `*Verdict: Comfortably Affordable!*\n` +
-      `After spending ${formatCurrency(plannedAmount)}, you will still have *${formatCurrency(newRemaining)}* left in your safe pool (*${formatCurrency(newPace)}/day* for ${days} days). Enjoy!`;
+      `After spending ${formatCurrency(plannedAmount)}, you will still have *${formatCurrency(newRemaining)}* left in your safe pool (*${formatCurrency(newPace)}/day* for ${days} days).`;
   }
 
   const replyText =
-    `${statusEmoji} *Affordability Financial Diagnosis*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `🏷️ *Planned Purchase:* ${formatCurrency(plannedAmount)}\n` +
-    `💰 *Current Remaining:* ${formatCurrency(remaining)} (${days} days left)\n` +
-    `⚡ *Current Daily Pace:* ${formatCurrency(currentPace)}/day\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `📉 *Projected Daily Pace:* ${formatCurrency(newPace)}/day\n\n` +
+    `*Affordability Financial Diagnosis*\n` +
+    `*Planned Purchase:* ${formatCurrency(plannedAmount)}\n` +
+    `*Current Remaining:* ${formatCurrency(remaining)} (${days} days left)\n` +
+    `*Current Daily Pace:* ${formatCurrency(currentPace)}/day\n` +
+    `*Projected Daily Pace:* ${formatCurrency(newPace)}/day\n\n` +
     `${advice}`;
 
   return {
@@ -288,8 +281,8 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
     type: 'affordability_analysis',
     data: { plannedAmount, remaining, newRemaining, newPace },
     actionButtons: [
-      { label: '⚡ Daily Pace', query: 'Daily Pace' },
-      { label: '📊 Summary', query: 'Summary' }
+      { label: 'Daily Pace', query: 'Daily Pace' },
+      { label: 'Summary', query: 'Summary' }
     ]
   };
 }
@@ -299,23 +292,22 @@ function handlePaceIntent(snapshot, formatCurrency) {
 
   const isTodayPaceHealthy = todaySpent <= safeDailyPace;
   const replyText =
-    `⚡ *Safe Daily Burn Rate*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `🎯 *Safe Target:* *${formatCurrency(safeDailyPace)}/day*\n` +
-    `📅 *Days Left in Month:* ${daysRemaining} days\n` +
-    `💰 *Remaining Pool:* ${formatCurrency(remainingBudget)}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `🛒 *Spent Today:* ${formatCurrency(todaySpent)}\n\n` +
+    `*Safe Daily Burn Rate*\n` +
+    `*Safe Target:* *${formatCurrency(safeDailyPace)}/day*\n` +
+    `*Days Left in Month:* ${daysRemaining} days\n` +
+    `*Remaining Pool:* ${formatCurrency(remainingBudget)}\n` +
+    `*Spent Today:* ${formatCurrency(todaySpent)}\n\n` +
     (isTodayPaceHealthy
-      ? `✨ *On Track:* You are ${formatCurrency(safeDailyPace - todaySpent)} below your safe daily cap today! Awesome job!`
-      : `⚠️ *High Velocity:* You have spent ${formatCurrency(todaySpent - safeDailyPace)} above today's target pace. Consider keeping tomorrow's spend low.`);
+      ? `*Status:* On Track — You are ${formatCurrency(safeDailyPace - todaySpent)} below your safe daily cap today.`
+      : `*Status:* High Velocity — You have spent ${formatCurrency(todaySpent - safeDailyPace)} above today's target pace. Consider keeping tomorrow's spend minimal.`);
 
   return {
     replyText,
     type: 'daily_pace',
     suggestedChips: ['Summary', 'Food Spend', 'Tips'],
     actionButtons: [
-      { label: '💡 Saving Tips', query: 'Saving Tips' },
-      { label: '📊 Summary', query: 'Summary' }
+      { label: 'Saving Tips', query: 'Saving Tips' },
+      { label: 'Summary', query: 'Summary' }
     ]
   };
 }
@@ -332,13 +324,12 @@ function handleCategoryQuery(lower, snapshot, formatCurrency) {
       const pct = match ? match.percent : 0;
 
       const replyText =
-        `🏷️ *${catRule.category} Spending Analysis*\n━━━━━━━━━━━━━━━━━━━━\n` +
-        `💸 *Total Spent:* *${formatCurrency(spent)}*\n` +
-        `📊 *Share of Budget:* ${pct}% of total spending\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${catRule.category} Spending Analysis*\n` +
+        `*Total Spent:* *${formatCurrency(spent)}*\n` +
+        `*Share of Budget:* ${pct}% of total spending\n\n` +
         (spent > 0
-          ? `💡 This is one of your active spending channels this month.`
-          : `✨ Great news! You have spent ₹0 in ${catRule.category} so far this month.`);
+          ? `This is one of your active spending channels this month.`
+          : `Great news! You have spent ₹0 in ${catRule.category} so far this month.`);
 
       return { replyText, type: 'category_detail' };
     }
@@ -347,7 +338,7 @@ function handleCategoryQuery(lower, snapshot, formatCurrency) {
   // General category breakdown
   if (categories.length === 0) {
     return {
-      replyText: `📊 You haven't recorded any category expenses yet this month. Start by logging something like \`Chai 20\`!`,
+      replyText: `You haven't recorded any category expenses yet this month. Start by logging something like \`Chai 20\`!`,
       type: 'category_breakdown'
     };
   }
@@ -356,10 +347,9 @@ function handleCategoryQuery(lower, snapshot, formatCurrency) {
   const chartLines = topCats.map((c, i) => `${i + 1}. *${c.category}:* ${formatCurrency(c.spent)} (${c.percent}%)`).join('\n');
 
   const replyText =
-    `📊 *Top Spending Categories (November)*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `${chartLines}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `🏆 *Top Category:* *${snapshot.topCategory?.category || 'General'}* (${snapshot.topCategory?.percent || 0}% of expenses)`;
+    `*Top Spending Categories (November)*\n` +
+    `${chartLines}\n\n` +
+    `*Top Category:* *${snapshot.topCategory?.category || 'General'}* (${snapshot.topCategory?.percent || 0}% of expenses)`;
 
   return {
     replyText,
@@ -372,20 +362,19 @@ function handleRecentHistory(snapshot, formatCurrency) {
   const txs = snapshot.safeTransactions.slice(0, 5);
   if (txs.length === 0) {
     return {
-      replyText: `🕒 No recent transactions recorded yet this month.`,
+      replyText: `No recent transactions recorded yet this month.`,
       type: 'history'
     };
   }
 
   const list = txs.map((t, idx) => 
-    `${idx + 1}. *${t.merchant}* • ${formatCurrency(t.amount)}\n   🏷️ ${t.category} • 💳 ${t.paymentMode} • 📅 ${t.date}`
-  ).join('\n\n');
+    `${idx + 1}. *${t.merchant}* • ${formatCurrency(t.amount)} (${t.category} • ${t.paymentMode} • ${t.date})`
+  ).join('\n');
 
   const replyText =
-    `🕒 *Your Last ${txs.length} Expenses*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `${list}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `💡 Send \`Undo\` to delete the most recent one.`;
+    `*Recent Spending History (${txs.length} Transactions)*\n` +
+    `${list}\n\n` +
+    `Send \`Undo\` to delete the most recent one.`;
 
   return {
     replyText,
@@ -400,12 +389,10 @@ function handleSavingAdvice(snapshot, formatCurrency) {
   const pace = snapshot.safeDailyPace;
 
   const replyText =
-    `💡 *Personalized Financial Coaching*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `1. 🎯 *Top Optimization Target:* Your highest expense is *${topCat}* (${formatCurrency(topSpent)}). Trimming just 15% here saves *${formatCurrency(Math.round(topSpent * 0.15))}*.\n` +
-    `2. ⚡ *The Daily Pace Rule:* Your safe burn rate is *${formatCurrency(pace)}/day*. Setting a micro-goal to spend zero on 2 weekdays every week adds *${formatCurrency(pace * 2)}* directly to your savings pool.\n` +
-    `3. ☕ *Micro-Expense Alert:* Multiple ₹20–₹50 spends add up quickly to ~₹1,500/month. Use PocketNook's Speed Chips to stay mindful!\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `✨ You're in control of your financial freedom!`;
+    `*Personalized Financial Coaching*\n` +
+    `1. *Top Optimization Target:* Your highest expense is *${topCat}* (${formatCurrency(topSpent)}). Trimming 15% here saves *${formatCurrency(Math.round(topSpent * 0.15))}*.\n` +
+    `2. *The Daily Pace Rule:* Your safe burn rate is *${formatCurrency(pace)}/day*. Setting a micro-goal to spend zero on 2 weekdays adds *${formatCurrency(pace * 2)}* directly to your savings pool.\n` +
+    `3. *Micro-Expense Alert:* Multiple ₹20–₹50 spends add up quickly to ~₹1,500/month. Use PocketNook's Speed Chips to stay mindful!`;
 
   return {
     replyText,
@@ -418,16 +405,15 @@ function handleSummary(snapshot, formatCurrency) {
   const { totalSpent, budget, remainingBudget, todaySpent, percentSpent } = snapshot;
 
   const replyText =
-    `📊 *Monthly Budget Summary*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *Spent This Month:* ${formatCurrency(totalSpent)} (${percentSpent}%)\n` +
-    `🎯 *Total Budget:* ${formatCurrency(budget)}\n` +
-    `⚖️ *Remaining Balance:* *${formatCurrency(remainingBudget)}*\n` +
-    `📅 *Spent Today:* ${formatCurrency(todaySpent)}\n` +
-    `⚡ *Safe Daily Pace:* ${formatCurrency(snapshot.safeDailyPace)}/day\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `*Monthly Budget Summary*\n` +
+    `*Spent This Month:* ${formatCurrency(totalSpent)} (${percentSpent}%)\n` +
+    `*Total Budget:* ${formatCurrency(budget)}\n` +
+    `*Remaining Balance:* *${formatCurrency(remainingBudget)}*\n` +
+    `*Spent Today:* ${formatCurrency(todaySpent)}\n` +
+    `*Safe Daily Pace:* ${formatCurrency(snapshot.safeDailyPace)}/day\n\n` +
     (remainingBudget < 0
-      ? `🚨 *Notice:* Budget exceeded by ${formatCurrency(Math.abs(remainingBudget))}!`
-      : `✨ *Health:* Safe and comfortably within limits.`);
+      ? `*Notice:* Budget exceeded by ${formatCurrency(Math.abs(remainingBudget))}!`
+      : `*Health:* Safe and comfortably within limits.`);
 
   return {
     replyText,
@@ -472,11 +458,10 @@ async function handleMultiItemLogging(items, snapshot, formatCurrency, onSaveExp
 
   const newTotal = snapshot.totalSpent + totalAdded;
   const replyText =
-    `⚡ *Batch Expenses Recorded (${items.length} Items)*\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `${loggedList.join('\n')}\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *Total Batch Amount:* ${formatCurrency(totalAdded)}\n` +
-    `📊 *Updated Month Spent:* ${formatCurrency(newTotal)}`;
+    `*Batch Expenses Recorded (${items.length} Items)*\n` +
+    `${loggedList.join('\n')}\n\n` +
+    `*Total Batch Amount:* ${formatCurrency(totalAdded)}\n` +
+    `*Updated Month Spent:* ${formatCurrency(newTotal)}`;
 
   return {
     replyText,
@@ -500,21 +485,19 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
 
   const currentTotal = snapshot.totalSpent + (parsed.type === 'income' ? -parsed.amount : parsed.amount);
   const replyText = parsed.type === 'income'
-    ? `🎉 *Income / Refund Logged!*\n━━━━━━━━━━━━━━━━━━━━\n` +
-      `💵 *Amount:* +${formatCurrency(parsed.amount)}\n` +
-      `📝 *Source:* ${parsed.merchant}\n` +
-      `💳 *Mode:* ${parsed.paymentMode}\n` +
-      `📅 *Date:* ${parsed.date}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `💰 Updated Monthly Spent: ${formatCurrency(currentTotal)}`
-    : `✅ *Expense Logged Successfully!*\n━━━━━━━━━━━━━━━━━━━━\n` +
-      `💰 *Amount:* ${formatCurrency(parsed.amount)}\n` +
-      `🏷️ *Category:* ${parsed.category}\n` +
-      `📝 *Merchant:* ${parsed.merchant}\n` +
-      `💳 *Mode:* ${parsed.paymentMode}\n` +
-      `📅 *Date:* ${parsed.date}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `📊 Updated Monthly Spent: ${formatCurrency(currentTotal)}`;
+    ? `*Income / Refund Logged!*\n` +
+      `*Amount:* +${formatCurrency(parsed.amount)}\n` +
+      `*Source:* ${parsed.merchant}\n` +
+      `*Mode:* ${parsed.paymentMode}\n` +
+      `*Date:* ${parsed.date}\n\n` +
+      `Updated Monthly Spent: ${formatCurrency(currentTotal)}`
+    : `*Expense Logged Successfully!*\n` +
+      `*Amount:* ${formatCurrency(parsed.amount)}\n` +
+      `*Category:* ${parsed.category}\n` +
+      `*Merchant:* ${parsed.merchant}\n` +
+      `*Mode:* ${parsed.paymentMode}\n` +
+      `*Date:* ${parsed.date}\n\n` +
+      `Updated Monthly Spent: ${formatCurrency(currentTotal)}`;
 
   return {
     replyText,
@@ -522,19 +505,19 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
     parsed,
     suggestedChips: ['Undo', 'Summary', 'Daily Pace'],
     actionButtons: [
-      { label: '📊 View Balance', query: 'Summary' },
-      { label: '↩️ Undo', query: 'Undo' }
+      { label: 'View Balance', query: 'Summary' },
+      { label: 'Undo', query: 'Undo' }
     ]
   };
 }
 
 function handleFallbackResponse(text, snapshot, formatCurrency) {
   const replyText =
-    `🤔 *I'm not quite sure how to process:* _"${text}"_\n\n` +
-    `💡 *Here are things you can ask me:*\n` +
+    `*I'm not quite sure how to process:* _"${text}"_\n\n` +
+    `*Here are things you can ask me:*\n` +
     `• \`Chai 20\` or \`Lunch 150 upi\` (Record expense)\n` +
     `• \`50 milk, 120 fruits\` (Batch log items)\n` +
-    `• \`Can I afford 3500?\` (Affordability analysis)\n` +
+    `• \`Can I afford 3500?\` (Affordability diagnosis)\n` +
     `• \`Split 1800 by 4\` (Calculate bill split)\n` +
     `• \`Where is my money going?\` (Category breakdown)\n` +
     `• \`Daily pace\` or \`Summary\` (Budget check)\n` +

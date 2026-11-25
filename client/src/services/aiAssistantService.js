@@ -178,7 +178,7 @@ function isBillSplitIntent(lower) {
 
 function isAffordabilityIntent(lower) {
   return /\b(?:can\s*i\s*afford|should\s*i\s*buy|khareed\s*sakta|le\s*sakta|kya\s*mai|afford\s*kar)\b/i.test(lower) ||
-         (/\b(?:afford|budget\s*hai)\b/i.test(lower) && /\d+/.test(lower));
+    (/\b(?:afford|budget\s*hai)\b/i.test(lower) && /\d+/.test(lower));
 }
 
 function isPaceOrBurnRateIntent(lower) {
@@ -187,7 +187,7 @@ function isPaceOrBurnRateIntent(lower) {
 
 function isCategoryBreakdownIntent(lower) {
   return /\b(?:category|categories|breakdown|where\s*(?:did|is)\s*(?:all\s*)?my\s*money|where.*money.*going|kahan\s*kharcha|food\s*spend|travel\s*spend|grocery|shopping)\b/i.test(lower) &&
-         !/\b(?:chai\s*\d|\d+\s*chai|spent\s*\d)\b/i.test(lower);
+    !/\b(?:chai\s*\d|\d+\s*chai|spent\s*\d)\b/i.test(lower);
 }
 
 function isRecentHistoryIntent(lower) {
@@ -208,12 +208,12 @@ function isDebtPayoffIntent(lower) {
 
 function isOverbudgetIntent(lower, snapshot) {
   return /\b(?:over\s*budget|exceeded|deficit|kharcha\s*zyada|budget\s*khatam|spent\s*too\s*much|overspent)\b/i.test(lower) ||
-         (snapshot.remainingBudget < 0 && /\b(?:status|how\s*am\s*i\s*doing|kaisa\s*chal\s*raha)\b/i.test(lower));
+    (snapshot.remainingBudget < 0 && /\b(?:status|how\s*am\s*i\s*doing|kaisa\s*chal\s*raha)\b/i.test(lower));
 }
 
 function isCategoryOptimizationIntent(lower) {
   return /\b(?:cut\s*down|reduce|save\s*on|spend\s*less)\b/i.test(lower) &&
-         /\b(?:food|dining|grocery|shopping|clothes|delivery|zomato|swiggy|uber|ola|subscription|bills)\b/i.test(lower);
+    /\b(?:food|dining|grocery|shopping|clothes|delivery|zomato|swiggy|uber|ola|subscription|bills)\b/i.test(lower);
 }
 
 function isGoalPlanningIntent(lower) {
@@ -245,7 +245,7 @@ function isGeneralFinancialQuestion(lower) {
    ======================================================== */
 
 function handleGreetingResponse(snapshot, formatCurrency) {
-  const replyText = 
+  const replyText =
     `*PocketNook Copilot Active*\n\n` +
     `Your private, on-device financial intelligence engine. Here is what I can do for you:\n\n` +
     `• *Instant Logging:* \`Chai 20\` or \`Lunch 150 card\`\n` +
@@ -356,17 +356,17 @@ function handleAffordabilityIntent(lower, snapshot, formatCurrency) {
   let advice = '';
 
   if (newRemaining < 0) {
-    advice = 
+    advice =
       `*Verdict: Budget Risk Detected.*\n` +
       `Spending ${formatCurrency(plannedAmount)} will push you *${formatCurrency(Math.abs(newRemaining))} over budget* with ${days} days remaining in November. ` +
       `Recommendation: Hold off until next month or reallocate from another category.`;
   } else if (newPace < currentPace * 0.45) {
-    advice = 
+    advice =
       `*Verdict: Tight Squeeze.*\n` +
       `You can technically afford it, but your safe daily spending will shrink from *${formatCurrency(currentPace)}/day* down to *${formatCurrency(newPace)}/day* for the next ${days} days. ` +
       `Recommendation: Keep dining and discretionary shopping minimal for the rest of the month.`;
   } else {
-    advice = 
+    advice =
       `*Verdict: Comfortably Affordable!*\n` +
       `After spending ${formatCurrency(plannedAmount)}, you will still have *${formatCurrency(newRemaining)}* left in your safe pool (*${formatCurrency(newPace)}/day* for ${days} days).`;
   }
@@ -507,19 +507,19 @@ function handleCategoryOptimization(lower, snapshot, formatCurrency) {
 
   if (lower.includes('food') || lower.includes('dining') || lower.includes('zomato') || lower.includes('swiggy')) {
     title = 'Food & Dining Optimization Plan';
-    tips = 
+    tips =
       `• *Cap Food Delivery to 1x/Week:* Delivery fees, packaging, and platform markups add 35-50% to meal costs.\n` +
       `• *Meal Prep Staples:* Batch cooking lunch on Sundays cuts weekday office dining expenses by up to 60%.\n` +
       `• *The ₹30 Chai/Snack Audit:* Multiple daily micro-spends average ~₹1,800/month. Keep a dedicated weekly cash envelope for snacks.`;
   } else if (lower.includes('shopping') || lower.includes('clothes')) {
     title = 'Shopping & Discretionary Control';
-    tips = 
+    tips =
       `• *The 48-Hour Cooling Rule:* For any non-essential purchase > ₹1,000, wait 48 hours before checking out. 70% of impulse desires fade.\n` +
       `• *Cost-Per-Use Formula:* Divide item price by projected uses. If you won't use it 30+ times, rent or skip it.\n` +
       `• *Unsubscribe from Sale Push Alerts:* Delete shopping app notification permissions to remove artificial urgency.`;
   } else {
     title = 'Recurring Bills & Subscriptions Audit';
-    tips = 
+    tips =
       `• *Ghost Subscription Purge:* Review streaming, gym, and app renewals. Cancel anything unused in the last 30 days.\n` +
       `• *Switch to Annual Plans:* For services you use daily (broadband, cloud), annual billing yields 15-25% instant savings.\n` +
       `• *Family Sharing Plans:* Pool music and OTT subscriptions with family or roommates to split costs.`;
@@ -663,7 +663,7 @@ function handleRecentHistory(snapshot, formatCurrency) {
     };
   }
 
-  const list = txs.map((t, idx) => 
+  const list = txs.map((t, idx) =>
     `${idx + 1}. *${t.merchant}* • ${formatCurrency(t.amount)} (${t.category} • ${t.paymentMode} • ${t.date})`
   ).join('\n');
 
@@ -781,18 +781,18 @@ async function handleSingleExpenseLogging(parsed, snapshot, formatCurrency, onSa
   const currentTotal = snapshot.totalSpent + (parsed.type === 'income' ? -parsed.amount : parsed.amount);
   const replyText = parsed.type === 'income'
     ? `*Income / Refund Logged!*\n` +
-      `*Amount:* +${formatCurrency(parsed.amount)}\n` +
-      `*Source:* ${parsed.merchant}\n` +
-      `*Mode:* ${parsed.paymentMode}\n` +
-      `*Date:* ${parsed.date}\n\n` +
-      `Updated Monthly Spent: ${formatCurrency(currentTotal)}`
+    `*Amount:* +${formatCurrency(parsed.amount)}\n` +
+    `*Source:* ${parsed.merchant}\n` +
+    `*Mode:* ${parsed.paymentMode}\n` +
+    `*Date:* ${parsed.date}\n\n` +
+    `Updated Monthly Spent: ${formatCurrency(currentTotal)}`
     : `*Expense Logged Successfully!*\n` +
-      `*Amount:* ${formatCurrency(parsed.amount)}\n` +
-      `*Category:* ${parsed.category}\n` +
-      `*Merchant:* ${parsed.merchant}\n` +
-      `*Mode:* ${parsed.paymentMode}\n` +
-      `*Date:* ${parsed.date}\n\n` +
-      `Updated Monthly Spent: ${formatCurrency(currentTotal)}`;
+    `*Amount:* ${formatCurrency(parsed.amount)}\n` +
+    `*Category:* ${parsed.category}\n` +
+    `*Merchant:* ${parsed.merchant}\n` +
+    `*Mode:* ${parsed.paymentMode}\n` +
+    `*Date:* ${parsed.date}\n\n` +
+    `Updated Monthly Spent: ${formatCurrency(currentTotal)}`;
 
   return {
     replyText,

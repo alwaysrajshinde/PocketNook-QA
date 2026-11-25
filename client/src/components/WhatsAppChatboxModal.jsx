@@ -332,7 +332,7 @@ export default function WhatsAppChatboxModal({
       {
         id: 'msg_welcome_2',
         sender: 'bot',
-        text: '*Instant Financial Intelligence:*\n• `Can I afford a 3500 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS alert\n• `Undo` to remove last expense\n\n*Tip:* Tap the paperclip icon below to scan receipt photos on-device.',
+        text: '*Instant Financial Intelligence:*\n• `Can I afford a 3500 dinner?`\n• `Where is my money going?`\n• `Split 2400 between 6 people`\n• `50 chai, 120 lunch, 40 auto`\n• `What is my safe daily pace?`\n• `Chai 20` or paste any bank SMS alert\n• `Undo` to remove last expense',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -577,12 +577,13 @@ export default function WhatsAppChatboxModal({
       className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center bg-slate-950/70 dark:bg-black/80 backdrop-blur-xl animate-fade-in"
       data-testid="whatsapp-chatbox-modal"
     >
-      {/* Hidden receipt file picker */}
+      {/* Hidden receipt file picker (disabled for now) */}
       <input
         type="file"
         accept="image/*"
         ref={fileInputRef}
         onChange={handleReceiptUpload}
+        disabled
         className="hidden"
       />
 
@@ -796,14 +797,14 @@ export default function WhatsAppChatboxModal({
            ======================================================== */}
         <div className="bg-white dark:bg-[#16132A] p-3 border-t border-slate-200/70 dark:border-white/[0.08] relative z-20">
           <div className="bg-[#f0f2f7] dark:bg-[#120F24] border border-slate-200/80 dark:border-white/[0.08] rounded-[22px] p-1.5 pl-3 flex items-center gap-2 focus-within:border-[#6C47FF]/60 focus-within:ring-2 focus-within:ring-[#6C47FF]/20 transition-all shadow-2xs">
-            {/* 1-Tap Receipt Camera / OCR */}
+            {/* Attachment option disabled for now (will work on next) */}
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Scan Receipt Photo"
+              disabled
+              title="Receipt attachment disabled (will work on next)"
               data-testid="whatsapp-paperclip-btn"
-              className="w-8 h-8 rounded-full bg-white dark:bg-[#16132A] text-slate-400 hover:text-[#6C47FF] dark:hover:text-[#A78BFA] flex items-center justify-center transition-all cursor-pointer active:scale-90 border border-slate-200/60 dark:border-white/[0.06] flex-shrink-0 shadow-2xs"
-              aria-label="Attach receipt photo"
+              className="w-8 h-8 rounded-full bg-slate-100/60 dark:bg-white/[0.03] text-slate-300 dark:text-zinc-600 flex items-center justify-center cursor-not-allowed opacity-35 border border-slate-200/40 dark:border-white/[0.04] flex-shrink-0"
+              aria-label="Attachment option disabled"
             >
               <Paperclip size={16} />
             </button>

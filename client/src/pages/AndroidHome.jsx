@@ -4,7 +4,7 @@ import {
   CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
-import SmartActionHub from '../components/SmartActionHub';
+import MoneyAuraStoryCard from '../components/MoneyAuraStoryCard';
 import { 
   getRecurringSubscriptions, 
   getUpcomingRenewals, 
@@ -261,16 +261,11 @@ export default function AndroidHome({
       </div>
 
       {/* ========================================================
-          Smart Action Hub (Zero-number quick capture & pace pulse)
+          Live Money Aura & Daily Rhythm Story (Zero-Number Experience)
          ======================================================== */}
-      <SmartActionHub
+      <MoneyAuraStoryCard
         dashboardData={dashboardData}
-        onOpenAddExpense={onOpenAddExpense}
-        onOpenSmsParser={onOpenSmsParser}
-        onOpenReceiptScanner={onOpenReceiptScanner}
-        onOpenWhatsAppAssistant={onOpenWhatsAppAssistant}
-        onOpenRecurringModal={onOpenRecurringModal}
-        onViewAllCategories={onViewAllCategories}
+        selectedMonth={selectedMonth}
       />
 
 

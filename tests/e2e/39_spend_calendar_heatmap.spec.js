@@ -2,7 +2,7 @@
 const { test, expect } = require('../fixtures/auth.fixture');
 const { cleanTestUsers } = require('../helpers/dbHelper');
 
-test.describe('Area 39: Zero-Number Smart Action Hub', () => {
+test.describe('Area 39: Live Money Aura & Daily Rhythm Story', () => {
   test.afterAll(() => {
     cleanTestUsers();
   });
@@ -19,28 +19,29 @@ test.describe('Area 39: Zero-Number Smart Action Hub', () => {
     }
   }
 
-  test('39.1: Smart Action Hub displays qualitative pace without numeric clutter and saves checklists cleanly', async ({ page, authHelpers }) => {
+  test('39.1: Money Aura Story renders with zero numbers and navigates Aura, Rhythm, and Badges slides smoothly', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await ensureCleanHome(page);
 
-    const hub = page.locator('[data-testid="smart-action-hub"]').first();
-    await expect(hub).toBeVisible({ timeout: 10000 });
-    await expect(hub.locator('[data-testid="pulse-status-badge"]')).toBeVisible();
-    await expect(hub.locator('[data-testid="category-color-ribbon"]')).toBeVisible();
+    const card = page.locator('[data-testid="money-aura-card"]').first();
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await expect(card.locator('[data-testid="aura-slide-aura"]')).toBeVisible();
 
-    // Ensure the hub stays purely qualitative (zero currency figures)
-    const hubText = await hub.innerText();
-    expect(hubText.includes('₹')).toBe(false);
+    // Slide 1 strictly zero digits & zero currency symbol
+    const slide1Text = await card.innerText();
+    expect(/\d/.test(slide1Text)).toBe(false);
+    expect(slide1Text.includes('₹')).toBe(false);
 
-    // Add a pending spend reminder note cleanly
-    await hub.locator('[data-testid="hub-note-input"]').fill('Pay broadband bill');
-    await hub.locator('[data-testid="hub-note-add-btn"]').click();
-    await expect(hub).toContainText('Pay broadband bill');
+    // Slide 2: Rhythm wave
+    await card.locator('[data-testid="aura-progress-rhythm"]').click();
+    await expect(card.locator('[data-testid="aura-slide-rhythm"]')).toBeVisible();
+    const slide2Text = await card.innerText();
+    expect(/\d/.test(slide2Text)).toBe(false);
 
-    // Quick tools are visible and interactive
-    await expect(hub.locator('[data-testid="hub-action-scan"]')).toBeVisible();
-    await expect(hub.locator('[data-testid="hub-action-sms"]')).toBeVisible();
-    await expect(hub.locator('[data-testid="hub-action-chat"]')).toBeVisible();
-    await expect(hub.locator('[data-testid="hub-action-bills"]')).toBeVisible();
+    // Slide 3: Badges
+    await card.locator('[data-testid="aura-progress-badges"]').click();
+    await expect(card.locator('[data-testid="aura-slide-badges"]')).toBeVisible();
+    const slide3Text = await card.innerText();
+    expect(/\d/.test(slide3Text)).toBe(false);
   });
 });

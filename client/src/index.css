@@ -402,6 +402,33 @@ button:active:not(:disabled), [role="button"]:active:not(:disabled) {
   transform: scale(0.985);
 }
 
+/* 11.5 Living Aurora Keyframes for Money Aura Story */
+@keyframes auraFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(14px, -10px, 0) scale(1.08);
+  }
+}
+
+@keyframes auraDrift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1.04);
+  }
+  50% {
+    transform: translate3d(-16px, 12px, 0) scale(0.96);
+  }
+}
+
+.aura-orb-primary {
+  animation: auraFloat 8s ease-in-out infinite;
+}
+
+.aura-orb-secondary {
+  animation: auraDrift 10s ease-in-out infinite;
+}
+
 /* 12. Accessibility: Strictly Respect Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,

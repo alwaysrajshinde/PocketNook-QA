@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pocketnook-cache-v12';
+const CACHE_NAME = 'pocketnook-cache-v13';
 const STATIC_ASSETS = [
   './',
   './index.html',

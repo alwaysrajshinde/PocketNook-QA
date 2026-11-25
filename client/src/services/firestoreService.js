@@ -444,6 +444,23 @@ export async function getTransactions(userId, filters = {}) {
     let rows = [];
     snap.forEach(d => rows.push(d.data()));
 
+    // Fallback: if filtered query returned empty, inspect full user collection before giving up
+    if (rows.length === 0) {
+      const allSnap = await getDocs(txCol);
+      if (allSnap.empty) {
+        // Let api.js fall back to local REST API / cached offline ledger
+        return null;
+      }
+      allSnap.forEach(d => {
+        const data = d.data();
+        const mk = data.month_key || (data.date ? String(data.date).slice(0, 7) : '');
+        if (filters.month && filters.month !== 'all' && mk !== filters.month) return;
+        if (filters.category && filters.category !== 'all' && data.category !== filters.category) return;
+        if (filters.payment_mode && filters.payment_mode !== 'all' && data.payment_mode !== filters.payment_mode) return;
+        rows.push(data);
+      });
+    }
+
     // Client-side search filtering if query provided
     if (filters.search) {
       const s = filters.search.toLowerCase();

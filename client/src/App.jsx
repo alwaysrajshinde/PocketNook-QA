@@ -112,14 +112,14 @@ function MainApp() {
         setHasUnreadNotifs(true);
       }
 
-        if (lastNotified !== APP_VERSION) {
-          localStorage.setItem('expense_tracker_update_toast_version', APP_VERSION);
-          const timer = setTimeout(() => {
-            showToast(`🚀 App updated to ${APP_VERSION} (${APP_SHORT_DATE}, ${APP_RELEASE_TIME})!`, 'info', 4000);
-          }, 3500);
-          return () => clearTimeout(timer);
-        }
-    } catch (e) {}
+      if (lastNotified !== APP_VERSION) {
+        localStorage.setItem('expense_tracker_update_toast_version', APP_VERSION);
+        const timer = setTimeout(() => {
+          showToast(`🚀 App updated to ${APP_VERSION} (${APP_SHORT_DATE}, ${APP_RELEASE_TIME})!`, 'info', 4000);
+        }, 3500);
+        return () => clearTimeout(timer);
+      }
+    } catch (e) { }
   }, []);
 
   // Track user interaction heartbeat to identify extended absence / session return
@@ -211,6 +211,7 @@ function MainApp() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [prefillAddDate, setPrefillAddDate] = useState(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isImportHistoryOpen, setIsImportHistoryOpen] = useState(false);
@@ -329,8 +330,9 @@ function MainApp() {
     };
   }, [isAddModalOpen, isImportModalOpen, isImportHistoryOpen, isNotificationsOpen, isReleaseNotesOpen, isOnboardingTourOpen]);
 
-  const openAddModal = (tx = null) => {
+  const openAddModal = (tx = null, dateStr = null) => {
     setEditingTransaction(tx);
+    setPrefillAddDate(dateStr);
     setIsAddModalOpen(true);
     if (typeof window !== 'undefined' && window.history) {
       window.history.pushState({ modal: 'add' }, '');
@@ -342,7 +344,7 @@ function MainApp() {
     setHasUnreadNotifs(false);
     try {
       localStorage.setItem('expense_tracker_last_seen_version', APP_VERSION);
-    } catch (e) {}
+    } catch (e) { }
     if (typeof window !== 'undefined' && window.history) {
       window.history.pushState({ modal: 'notifications' }, '');
     }
@@ -375,8 +377,8 @@ function MainApp() {
       ]);
       setCategories(cats);
       const isRaj = user?.email?.toLowerCase() === 'raaajshinde@gmail.com';
-      const rawBudget = sett.monthly_budget !== undefined && sett.monthly_budget !== null && sett.monthly_budget !== '' 
-        ? String(sett.monthly_budget) 
+      const rawBudget = sett.monthly_budget !== undefined && sett.monthly_budget !== null && sett.monthly_budget !== ''
+        ? String(sett.monthly_budget)
         : (isRaj ? '12000' : '12000');
       const updatedSettings = {
         ...sett,
@@ -390,9 +392,9 @@ function MainApp() {
 
       // First-time onboarding tour check for new accounts
       const tourKey = 'et_tour_completed_' + (user?.uid || user?.email || 'guest');
-      const alreadySeen = localStorage.getItem(tourKey) === 'true' || 
-                          (user?.email && localStorage.getItem('et_tour_completed_' + user.email) === 'true') ||
-                          localStorage.getItem('et_tour_completed_all') === 'true';
+      const alreadySeen = localStorage.getItem(tourKey) === 'true' ||
+        (user?.email && localStorage.getItem('et_tour_completed_' + user.email) === 'true') ||
+        localStorage.getItem('et_tour_completed_all') === 'true';
       const budgetZero = (parseFloat(updatedSettings.monthly_budget) || 0) === 0;
 
       if (!isRaj && !alreadySeen && (budgetZero || !sett.onboarding_completed)) {
@@ -576,143 +578,146 @@ function MainApp() {
             <main className="flex-1 px-5 sm:px-7 py-4 pb-8">
               <div key={activeTab} className="page-enter">
                 {activeTab === 'home' && (
-                <Home
-                  dashboardData={dashboardData}
-                  reportsData={reportsData}
-                  categories={categories}
-                  selectedMonth={selectedMonth}
-                  availableMonths={availableMonths}
-                  onOpenAddExpense={() => openAddModal(null)}
-                  onQuickAddExpense={handleSaveTransaction}
-                  onViewAllCategories={() => {
-                    handleNavigate({ tab: 'settings', section: 'categories' });
-                  }}
-                  onViewAllTransactions={() => handleNavigate({ tab: 'transactions' })}
-                  onSetBudget={() => {
-                    handleNavigate({ tab: 'settings', section: 'budget' });
-                  }}
-                  formatCurrency={formatCurrency}
-                  onSelectMonth={setSelectedMonth}
-                  onOpenSmsParser={() => setIsSmsParserOpen(true)}
-                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
-                  onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
-                  onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
-                />
-              )}
+                  <Home
+                    dashboardData={dashboardData}
+                    reportsData={reportsData}
+                    categories={categories}
+                    selectedMonth={selectedMonth}
+                    availableMonths={availableMonths}
+                    onOpenAddExpense={() => openAddModal(null)}
+                    onOpenAddForDate={(dateStr) => openAddModal(null, dateStr)}
+                    onQuickAddExpense={handleSaveTransaction}
+                    onEditTransaction={(tx) => openAddModal(tx)}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    onViewAllCategories={() => {
+                      handleNavigate({ tab: 'settings', section: 'categories' });
+                    }}
+                    onViewAllTransactions={() => handleNavigate({ tab: 'transactions' })}
+                    onSetBudget={() => {
+                      handleNavigate({ tab: 'settings', section: 'budget' });
+                    }}
+                    formatCurrency={formatCurrency}
+                    onSelectMonth={setSelectedMonth}
+                    onOpenSmsParser={() => setIsSmsParserOpen(true)}
+                    onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                    onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
+                    onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
+                  />
+                )}
 
-              {activeTab === 'transactions' && (
-                <Transactions
-                  selectedMonth={selectedMonth}
-                  categories={categories}
-                  availableMonths={availableMonths}
-                  onEditTransaction={(tx) => openAddModal(tx)}
-                  onDeleteTransaction={handleDeleteTransaction}
-                  formatCurrency={formatCurrency}
-                  onSelectMonth={setSelectedMonth}
-                  onOpenImport={() => setIsImportModalOpen(true)}
-                />
-              )}
+                {activeTab === 'transactions' && (
+                  <Transactions
+                    selectedMonth={selectedMonth}
+                    categories={categories}
+                    availableMonths={availableMonths}
+                    onEditTransaction={(tx) => openAddModal(tx)}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    formatCurrency={formatCurrency}
+                    onSelectMonth={setSelectedMonth}
+                    onOpenImport={() => setIsImportModalOpen(true)}
+                  />
+                )}
 
-              {activeTab === 'reports' && (
-                <Reports
-                  reportsData={reportsData}
-                  selectedMonth={selectedMonth}
-                  availableMonths={availableMonths}
-                  onSelectMonth={setSelectedMonth}
-                  formatCurrency={formatCurrency}
-                  activeTab={reportsActiveTab}
-                  onTabChange={handleReportsTabChange}
-                  isMobileScreen={false}
-                />
-              )}
+                {activeTab === 'reports' && (
+                  <Reports
+                    reportsData={reportsData}
+                    selectedMonth={selectedMonth}
+                    availableMonths={availableMonths}
+                    onSelectMonth={setSelectedMonth}
+                    formatCurrency={formatCurrency}
+                    activeTab={reportsActiveTab}
+                    onTabChange={handleReportsTabChange}
+                    isMobileScreen={false}
+                  />
+                )}
 
-              {activeTab === 'settings' && (
-                <Settings
-                  settings={settings}
-                  categories={categories}
-                  initialSection={settingsSection}
-                  isDesktopScreen={true}
-                  selectedMonth={selectedMonth}
-                  availableMonths={availableMonths}
-                  onLogout={handleLogout}
-                  onOpenTour={() => setIsOnboardingTourOpen(true)}
-                  onOpenReleaseNotes={openReleaseNotesModal}
-                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
-                  onOpenSmsParser={() => setIsSmsParserOpen(true)}
-                  onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
-                  settingsSearch={settingsSearch}
-                  setSettingsSearch={setSettingsSearch}
-                  onUpdateSettings={async (data) => {
-                    const updated = await api.updateSettings(data);
-                    setSettings(prev => ({ ...prev, ...updated }));
-                    if (data.user_name) {
-                      setUser(prev => prev ? ({ ...prev, name: data.user_name, displayName: data.user_name }) : prev);
-                    }
-                    showToast('Settings saved successfully', 'success');
-                  }}
-                  onUpdateBudget={async (month, budget) => {
-                    await api.updateBudget(month, budget);
-                    loadMonthData(selectedMonth);
-                    showToast(`Monthly budget set to ${formatCurrency(budget)}`, 'success');
-                  }}
-                  onAddCategory={async (cat) => {
-                    await api.createCategory(cat);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast(`Category "${cat.name}" added successfully`, 'success');
-                  }}
-                  onUpdateCategory={async (id, data) => {
-                    await api.updateCategory(id, data);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast(`Category updated successfully`, 'success');
-                  }}
-                  onArchiveCategory={async (id) => {
-                    await api.archiveCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category archived', 'info');
-                  }}
-                  onRestoreCategory={async (id) => {
-                    await api.restoreCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category restored', 'success');
-                  }}
-                  onReassignCategory={async (oldCatName, newCatName, categoryIdToDelete) => {
-                    const reassigned = await api.reassignCategoryTransactions(oldCatName, newCatName);
-                    if (categoryIdToDelete) {
-                      await api.deleteCategory(categoryIdToDelete);
-                    }
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    handleRefreshAll();
-                    showToast(`Reassigned ${reassigned} transactions to "${newCatName}" and removed category`, 'success');
-                  }}
-                  onDeleteCategory={async (id) => {
-                    await api.deleteCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category deleted', 'info');
-                  }}
-                  onImportFile={api.importExcelOrCsv}
-                  onRestoreBackup={api.restoreBackup}
-                  onRefreshAll={handleRefreshAll}
-                  onOpenImport={() => setIsImportModalOpen(true)}
-                  onOpenImportHistory={() => setIsImportHistoryOpen(true)}
-                  onOpenNotifications={() => setIsNotificationsOpen(true)}
-                  hasUnreadNotifs={hasUnreadNotifs}
-                  formatCurrency={formatCurrency}
-                  selectedMonth={selectedMonth}
-                />
-              )}
+                {activeTab === 'settings' && (
+                  <Settings
+                    settings={settings}
+                    categories={categories}
+                    initialSection={settingsSection}
+                    isDesktopScreen={true}
+                    selectedMonth={selectedMonth}
+                    availableMonths={availableMonths}
+                    onLogout={handleLogout}
+                    onOpenTour={() => setIsOnboardingTourOpen(true)}
+                    onOpenReleaseNotes={openReleaseNotesModal}
+                    onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                    onOpenSmsParser={() => setIsSmsParserOpen(true)}
+                    onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
+                    settingsSearch={settingsSearch}
+                    setSettingsSearch={setSettingsSearch}
+                    onUpdateSettings={async (data) => {
+                      const updated = await api.updateSettings(data);
+                      setSettings(prev => ({ ...prev, ...updated }));
+                      if (data.user_name) {
+                        setUser(prev => prev ? ({ ...prev, name: data.user_name, displayName: data.user_name }) : prev);
+                      }
+                      showToast('Settings saved successfully', 'success');
+                    }}
+                    onUpdateBudget={async (month, budget) => {
+                      await api.updateBudget(month, budget);
+                      loadMonthData(selectedMonth);
+                      showToast(`Monthly budget set to ${formatCurrency(budget)}`, 'success');
+                    }}
+                    onAddCategory={async (cat) => {
+                      await api.createCategory(cat);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast(`Category "${cat.name}" added successfully`, 'success');
+                    }}
+                    onUpdateCategory={async (id, data) => {
+                      await api.updateCategory(id, data);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast(`Category updated successfully`, 'success');
+                    }}
+                    onArchiveCategory={async (id) => {
+                      await api.archiveCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category archived', 'info');
+                    }}
+                    onRestoreCategory={async (id) => {
+                      await api.restoreCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category restored', 'success');
+                    }}
+                    onReassignCategory={async (oldCatName, newCatName, categoryIdToDelete) => {
+                      const reassigned = await api.reassignCategoryTransactions(oldCatName, newCatName);
+                      if (categoryIdToDelete) {
+                        await api.deleteCategory(categoryIdToDelete);
+                      }
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      handleRefreshAll();
+                      showToast(`Reassigned ${reassigned} transactions to "${newCatName}" and removed category`, 'success');
+                    }}
+                    onDeleteCategory={async (id) => {
+                      await api.deleteCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category deleted', 'info');
+                    }}
+                    onImportFile={api.importExcelOrCsv}
+                    onRestoreBackup={api.restoreBackup}
+                    onRefreshAll={handleRefreshAll}
+                    onOpenImport={() => setIsImportModalOpen(true)}
+                    onOpenImportHistory={() => setIsImportHistoryOpen(true)}
+                    onOpenNotifications={() => setIsNotificationsOpen(true)}
+                    hasUnreadNotifs={hasUnreadNotifs}
+                    formatCurrency={formatCurrency}
+                    selectedMonth={selectedMonth}
+                  />
+                )}
 
-              {activeTab === 'not_found' && (
-                <NotFoundRoute
-                  rawPath={currentRoute?.rawPath}
-                  onGoHome={() => handleNavigate({ tab: 'home' })}
-                />
-              )}
+                {activeTab === 'not_found' && (
+                  <NotFoundRoute
+                    rawPath={currentRoute?.rawPath}
+                    onGoHome={() => handleNavigate({ tab: 'home' })}
+                  />
+                )}
               </div>
             </main>
           </div>
@@ -784,149 +789,152 @@ function MainApp() {
           <main className="flex-1 pb-28">
             <div key={activeTab} className="page-enter">
               {activeTab === 'home' && (
-              <AndroidHome
-                dashboardData={dashboardData}
-                onOpenAddExpense={() => openAddModal(null)}
-                onQuickAddExpense={handleSaveTransaction}
-                onEditTransaction={(tx) => openAddModal(tx)}
-                onViewAllCategories={() => {
-                  handleNavigate({ tab: 'settings', section: 'categories' });
-                }}
-                onViewAllTransactions={() => handleNavigate({ tab: 'transactions' })}
-                onSetBudget={() => {
-                  handleNavigate({ tab: 'settings', section: 'budget' });
-                }}
-                formatCurrency={formatCurrency}
-                categories={categories}
-                onOpenSmsParser={() => setIsSmsParserOpen(true)}
-                onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
-                onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
-                onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
-              />
-            )}
-
-            {activeTab === 'transactions' && (
-              <div className="px-3">
-                <Transactions
-                  selectedMonth={selectedMonth}
-                  categories={categories}
-                  availableMonths={availableMonths}
+                <AndroidHome
+                  dashboardData={dashboardData}
+                  onOpenAddExpense={() => openAddModal(null)}
+                  onOpenAddForDate={(dateStr) => openAddModal(null, dateStr)}
+                  onQuickAddExpense={handleSaveTransaction}
                   onEditTransaction={(tx) => openAddModal(tx)}
                   onDeleteTransaction={handleDeleteTransaction}
-                  formatCurrency={formatCurrency}
-                  onSelectMonth={setSelectedMonth}
-                  onOpenImport={() => setIsImportModalOpen(true)}
-                  isMobileScreen={true}
-                />
-              </div>
-            )}
-
-            {activeTab === 'reports' && (
-              <div className="px-3">
-                <Reports
-                  reportsData={reportsData}
                   selectedMonth={selectedMonth}
-                  availableMonths={availableMonths}
-                  onSelectMonth={setSelectedMonth}
+                  onViewAllCategories={() => {
+                    handleNavigate({ tab: 'settings', section: 'categories' });
+                  }}
+                  onViewAllTransactions={() => handleNavigate({ tab: 'transactions' })}
+                  onSetBudget={() => {
+                    handleNavigate({ tab: 'settings', section: 'budget' });
+                  }}
                   formatCurrency={formatCurrency}
-                  activeTab={reportsActiveTab}
-                  onTabChange={handleReportsTabChange}
-                  isMobileScreen={true}
-                />
-              </div>
-            )}
-
-            {activeTab === 'settings' && (
-              <div className="px-3">
-                <Settings
-                  settings={settings}
                   categories={categories}
-                  initialSection={settingsSection}
-                  isDesktopScreen={false}
-                  selectedMonth={selectedMonth}
-                  availableMonths={availableMonths}
-                  onLogout={handleLogout}
-                  onOpenTour={() => setIsOnboardingTourOpen(true)}
-                  onOpenReleaseNotes={openReleaseNotesModal}
-                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
                   onOpenSmsParser={() => setIsSmsParserOpen(true)}
-                  onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
-                  settingsSearch={settingsSearch}
-                  setSettingsSearch={setSettingsSearch}
-                  onUpdateSettings={async (data) => {
-                    const updated = await api.updateSettings(data);
-                    setSettings(prev => ({ ...prev, ...updated }));
-                    if (data.user_name) {
-                      setUser(prev => prev ? ({ ...prev, name: data.user_name, displayName: data.user_name }) : prev);
-                    }
-                    showToast('Settings saved successfully', 'success');
-                  }}
-                  onUpdateBudget={async (month, budget) => {
-                    await api.updateBudget(month, budget);
-                    loadMonthData(selectedMonth);
-                    showToast(`Monthly budget set to ${formatCurrency(budget)}`, 'success');
-                  }}
-                  onAddCategory={async (cat) => {
-                    await api.createCategory(cat);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast(`Category "${cat.name}" added successfully`, 'success');
-                  }}
-                  onUpdateCategory={async (id, data) => {
-                    await api.updateCategory(id, data);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast(`Category updated successfully`, 'success');
-                  }}
-                  onArchiveCategory={async (id) => {
-                    await api.archiveCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category archived', 'info');
-                  }}
-                  onRestoreCategory={async (id) => {
-                    await api.restoreCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category restored', 'success');
-                  }}
-                  onReassignCategory={async (oldCatName, newCatName, categoryIdToDelete) => {
-                    const reassigned = await api.reassignCategoryTransactions(oldCatName, newCatName);
-                    if (categoryIdToDelete) {
-                      await api.deleteCategory(categoryIdToDelete);
-                    }
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    handleRefreshAll();
-                    showToast(`Reassigned ${reassigned} transactions to "${newCatName}" and removed category`, 'success');
-                  }}
-                  onDeleteCategory={async (id) => {
-                    await api.deleteCategory(id);
-                    const updatedCats = await api.getCategories();
-                    setCategories(updatedCats);
-                    showToast('Category deleted', 'info');
-                  }}
-                  onImportFile={api.importExcelOrCsv}
-                  onRestoreBackup={api.restoreBackup}
-                  onRefreshAll={handleRefreshAll}
-                  onOpenImport={() => setIsImportModalOpen(true)}
-                  onOpenImportHistory={() => setIsImportHistoryOpen(true)}
-                  onOpenNotifications={() => setIsNotificationsOpen(true)}
-                  hasUnreadNotifs={hasUnreadNotifs}
-                  formatCurrency={formatCurrency}
-                  selectedMonth={selectedMonth}
+                  onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                  onOpenReceiptScanner={() => setIsReceiptScannerOpen(true)}
+                  onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
                 />
-              </div>
-            )}
+              )}
 
-            {activeTab === 'not_found' && (
-              <div className="px-3">
-                <NotFoundRoute
-                  rawPath={currentRoute?.rawPath}
-                  onGoHome={() => handleNavigate({ tab: 'home' })}
-                />
-              </div>
-            )}
+              {activeTab === 'transactions' && (
+                <div className="px-3">
+                  <Transactions
+                    selectedMonth={selectedMonth}
+                    categories={categories}
+                    availableMonths={availableMonths}
+                    onEditTransaction={(tx) => openAddModal(tx)}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    formatCurrency={formatCurrency}
+                    onSelectMonth={setSelectedMonth}
+                    onOpenImport={() => setIsImportModalOpen(true)}
+                    isMobileScreen={true}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'reports' && (
+                <div className="px-3">
+                  <Reports
+                    reportsData={reportsData}
+                    selectedMonth={selectedMonth}
+                    availableMonths={availableMonths}
+                    onSelectMonth={setSelectedMonth}
+                    formatCurrency={formatCurrency}
+                    activeTab={reportsActiveTab}
+                    onTabChange={handleReportsTabChange}
+                    isMobileScreen={true}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <div className="px-3">
+                  <Settings
+                    settings={settings}
+                    categories={categories}
+                    initialSection={settingsSection}
+                    isDesktopScreen={false}
+                    selectedMonth={selectedMonth}
+                    availableMonths={availableMonths}
+                    onLogout={handleLogout}
+                    onOpenTour={() => setIsOnboardingTourOpen(true)}
+                    onOpenReleaseNotes={openReleaseNotesModal}
+                    onOpenWhatsAppAssistant={() => setIsWhatsAppChatOpen(true)}
+                    onOpenSmsParser={() => setIsSmsParserOpen(true)}
+                    onSectionChange={(sec) => handleNavigate({ tab: 'settings', section: sec }, true)}
+                    settingsSearch={settingsSearch}
+                    setSettingsSearch={setSettingsSearch}
+                    onUpdateSettings={async (data) => {
+                      const updated = await api.updateSettings(data);
+                      setSettings(prev => ({ ...prev, ...updated }));
+                      if (data.user_name) {
+                        setUser(prev => prev ? ({ ...prev, name: data.user_name, displayName: data.user_name }) : prev);
+                      }
+                      showToast('Settings saved successfully', 'success');
+                    }}
+                    onUpdateBudget={async (month, budget) => {
+                      await api.updateBudget(month, budget);
+                      loadMonthData(selectedMonth);
+                      showToast(`Monthly budget set to ${formatCurrency(budget)}`, 'success');
+                    }}
+                    onAddCategory={async (cat) => {
+                      await api.createCategory(cat);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast(`Category "${cat.name}" added successfully`, 'success');
+                    }}
+                    onUpdateCategory={async (id, data) => {
+                      await api.updateCategory(id, data);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast(`Category updated successfully`, 'success');
+                    }}
+                    onArchiveCategory={async (id) => {
+                      await api.archiveCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category archived', 'info');
+                    }}
+                    onRestoreCategory={async (id) => {
+                      await api.restoreCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category restored', 'success');
+                    }}
+                    onReassignCategory={async (oldCatName, newCatName, categoryIdToDelete) => {
+                      const reassigned = await api.reassignCategoryTransactions(oldCatName, newCatName);
+                      if (categoryIdToDelete) {
+                        await api.deleteCategory(categoryIdToDelete);
+                      }
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      handleRefreshAll();
+                      showToast(`Reassigned ${reassigned} transactions to "${newCatName}" and removed category`, 'success');
+                    }}
+                    onDeleteCategory={async (id) => {
+                      await api.deleteCategory(id);
+                      const updatedCats = await api.getCategories();
+                      setCategories(updatedCats);
+                      showToast('Category deleted', 'info');
+                    }}
+                    onImportFile={api.importExcelOrCsv}
+                    onRestoreBackup={api.restoreBackup}
+                    onRefreshAll={handleRefreshAll}
+                    onOpenImport={() => setIsImportModalOpen(true)}
+                    onOpenImportHistory={() => setIsImportHistoryOpen(true)}
+                    onOpenNotifications={() => setIsNotificationsOpen(true)}
+                    hasUnreadNotifs={hasUnreadNotifs}
+                    formatCurrency={formatCurrency}
+                    selectedMonth={selectedMonth}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'not_found' && (
+                <div className="px-3">
+                  <NotFoundRoute
+                    rawPath={currentRoute?.rawPath}
+                    onGoHome={() => handleNavigate({ tab: 'home' })}
+                  />
+                </div>
+              )}
             </div>
           </main>
 
@@ -947,11 +955,12 @@ function MainApp() {
         onClose={() => {
           setIsAddModalOpen(false);
           setEditingTransaction(null);
+          setPrefillAddDate(null);
         }}
         onSave={handleSaveTransaction}
         categories={categories}
         editingTransaction={editingTransaction}
-        initialDate={dashboardData?.today_date || new Date().toISOString().slice(0, 10)}
+        initialDate={prefillAddDate || dashboardData?.today_date || new Date().toISOString().slice(0, 10)}
         onSaveAnotherSuccess={() => showToast('Expense saved! Ready for next.', 'success')}
         currency={settings?.currency || '₹'}
       />
@@ -1069,7 +1078,7 @@ function MainApp() {
           setSettings(prev => ({ ...prev, ai_data_consent: val }));
           try {
             await api.updateSettings({ ai_data_consent: val });
-          } catch (e) {}
+          } catch (e) { }
           handleRefreshAll();
         }}
         dashboardData={dashboardData}

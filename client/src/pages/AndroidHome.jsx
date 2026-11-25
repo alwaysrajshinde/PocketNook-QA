@@ -4,7 +4,7 @@ import {
   CalendarClock
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
-import SpeedChips from '../components/SpeedChips';
+import FiveOptionsShowcase from '../components/FiveOptionsShowcase';
 import { 
   getRecurringSubscriptions, 
   getUpcomingRenewals, 
@@ -15,12 +15,15 @@ import { useLanguage } from '../context/LanguageContext';
 
 export default function AndroidHome({
   dashboardData,
+  selectedMonth,
   onOpenAddExpense,
+  onOpenAddForDate,
   onQuickAddExpense,
   onViewAllCategories,
   onViewAllTransactions,
   onSetBudget,
   onEditTransaction,
+  onDeleteTransaction,
   formatCurrency,
   categories = [],
   onOpenSmsParser,
@@ -258,12 +261,22 @@ export default function AndroidHome({
       </div>
 
       {/* ========================================================
-          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
+          Interactive 5-Options Showcase (Replaces SpeedChips for testing 1-by-1)
          ======================================================== */}
-      <SpeedChips
-        onQuickAdd={onQuickAddExpense}
+      <FiveOptionsShowcase
+        dashboardData={dashboardData}
         categories={categories}
+        selectedMonth={selectedMonth}
+        hideAmounts={hideAmounts}
         formatCurrency={formatCurrency}
+        upcomingRenewals={upcomingRenewals}
+        onQuickAddExpense={onQuickAddExpense}
+        onOpenAddExpense={onOpenAddExpense}
+        onEditTransaction={onEditTransaction}
+        onDeleteTransaction={onDeleteTransaction}
+        onOpenAddForDate={onOpenAddForDate}
+        onViewAllCategories={onViewAllCategories}
+        onViewAllTransactions={onViewAllTransactions}
       />
 
 

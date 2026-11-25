@@ -1,5 +1,6 @@
 import * as firestoreService from './firestoreService';
 import { isFirebaseConfigured } from '../firebase/config';
+import rajHistoricalData from '../data/rajHistoricalData.json';
 import { 
   computeDashboardFromTransactions, 
   computeReportsFromTransactions,
@@ -8,6 +9,8 @@ import {
 import { 
   enqueuePendingMutation, 
   getPendingMutations,
+  getOfflineLedger,
+  saveOfflineLedger,
   addOfflineTransaction,
   updateOfflineTransaction,
   deleteOfflineTransaction 
@@ -202,21 +205,25 @@ export async function getTransactions(filters = {}) {
     try {
       const fsData = await firestoreService.getTransactions(getCurrentUserId(), filters);
       if (fsData) {
-        // Cache transactions into local storage & offline ledger for full offline continuity
-        if (Array.isArray(fsData.transactions) && fsData.transactions.length > 0) {
-          const current = getLocalTransactions();
-          const merged = [...current];
-          fsData.transactions.forEach(t => {
-            const idx = merged.findIndex(m => String(m.id) === String(t.id));
-            if (idx !== -1) merged[idx] = t;
-            else merged.push(t);
-          });
-          saveLocalTransactions(merged);
-          const uid = getCurrentUserId();
-          if (uid) {
-            const ledger = getOfflineLedger(uid);
-            saveOfflineLedger(uid, { ...ledger, transactions: merged });
+        // Cache transactions into local storage & offline ledger without failing the main read path
+        try {
+          if (Array.isArray(fsData.transactions) && fsData.transactions.length > 0) {
+            const current = getLocalTransactions();
+            const merged = [...current];
+            fsData.transactions.forEach(t => {
+              const idx = merged.findIndex(m => String(m.id) === String(t.id));
+              if (idx !== -1) merged[idx] = t;
+              else merged.push(t);
+            });
+            saveLocalTransactions(merged);
+            const uid = getCurrentUserId();
+            if (uid) {
+              const ledger = getOfflineLedger(uid);
+              saveOfflineLedger(uid, { ...ledger, transactions: merged });
+            }
           }
+        } catch (cacheErr) {
+          console.warn('Firestore local cache sync skipped:', cacheErr);
         }
         return fsData;
       }

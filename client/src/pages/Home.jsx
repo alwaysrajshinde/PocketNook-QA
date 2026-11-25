@@ -6,11 +6,11 @@ import {
 } from 'lucide-react';
 import CategoryIcon from '../components/CategoryIcon';
 import CustomDropdown from '../components/CustomDropdown';
-import SpeedChips from '../components/SpeedChips';
-import { 
-  getRecurringSubscriptions, 
-  getUpcomingRenewals, 
-  recordBillPaymentAsExpense 
+import FiveOptionsShowcase from '../components/FiveOptionsShowcase';
+import {
+  getRecurringSubscriptions,
+  getUpcomingRenewals,
+  recordBillPaymentAsExpense
 } from '../services/recurringExpensesService';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -22,7 +22,10 @@ export default function Home({
   selectedMonth = new Date().toISOString().slice(0, 7),
   availableMonths = [],
   onOpenAddExpense,
+  onOpenAddForDate,
   onQuickAddExpense,
+  onEditTransaction,
+  onDeleteTransaction,
   onViewAllCategories,
   onViewAllTransactions,
   onSetBudget,
@@ -60,14 +63,14 @@ export default function Home({
     try {
       localStorage.setItem('expense_tracker_hide_amounts', String(next));
       window.dispatchEvent(new Event('expense_tracker_hide_amounts_changed'));
-    } catch (e) {}
+    } catch (e) { }
   };
 
   useEffect(() => {
     const handleSync = () => {
       try {
         setHideAmounts(localStorage.getItem('expense_tracker_hide_amounts') === 'true');
-      } catch (e) {}
+      } catch (e) { }
     };
     window.addEventListener('expense_tracker_hide_amounts_changed', handleSync);
     window.addEventListener('storage', handleSync);
@@ -90,7 +93,7 @@ export default function Home({
       const subs = getRecurringSubscriptions();
       const renewals = getUpcomingRenewals(subs, 7);
       setUpcomingRenewals(renewals || []);
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   const handleLogRecurringBill = async (sub) => {
@@ -332,12 +335,22 @@ export default function Home({
       </div>
 
       {/* ========================================================
-          Feature 3: Speed Chips 1-Tap Frequent Expense Widget
+          Interactive 5-Options Showcase (Replaces SpeedChips for testing 1-by-1)
          ======================================================== */}
-      <SpeedChips
-        onQuickAdd={onQuickAddExpense}
+      <FiveOptionsShowcase
+        dashboardData={dashboardData}
         categories={categories}
+        selectedMonth={selectedMonth}
+        hideAmounts={hideAmounts}
         formatCurrency={formatCurrency}
+        upcomingRenewals={upcomingRenewals}
+        onQuickAddExpense={onQuickAddExpense}
+        onOpenAddExpense={onOpenAddExpense}
+        onEditTransaction={onEditTransaction}
+        onDeleteTransaction={onDeleteTransaction}
+        onOpenAddForDate={onOpenAddForDate}
+        onViewAllCategories={onViewAllCategories}
+        onViewAllTransactions={onViewAllTransactions}
       />
 
 
@@ -345,7 +358,7 @@ export default function Home({
           Feature 4: Upcoming Recurring Bills Banner
          ======================================================== */}
       {upcomingRenewals.length > 0 && (
-        <div 
+        <div
           data-testid="upcoming-bills-banner"
           className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3 flex flex-wrap items-center justify-between gap-3 text-xs"
         >

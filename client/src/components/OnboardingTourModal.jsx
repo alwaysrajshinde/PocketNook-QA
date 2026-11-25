@@ -71,6 +71,8 @@ export default function OnboardingTourModal({
 
           <button
             onClick={onClose}
+            aria-label="Close Tour"
+            data-testid="onboarding-tour-close-btn"
             className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
           >
             <X size={15} />

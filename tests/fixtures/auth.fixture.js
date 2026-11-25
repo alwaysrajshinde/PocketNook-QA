@@ -45,6 +45,39 @@ const test = base.extend({
         await expect(page.locator('text=Monthly Budget').first()).toBeVisible({ timeout: 15000 });
       },
 
+      // Login as user requested in prompt: rajmailtemp@gmail.com / Test@123
+      async loginAsRajMailTemp() {
+        await page.goto('/');
+        await page.evaluate(() => localStorage.clear());
+        await page.reload();
+
+        const signinTab = page.locator('button:has-text("Sign In")').first();
+        await expect(signinTab).toBeVisible({ timeout: 10000 });
+        await signinTab.click();
+
+        const emailInput = page.locator('input[type="email"]').first();
+        await expect(emailInput).toBeVisible({ timeout: 5000 });
+        await emailInput.fill('rajmailtemp@gmail.com');
+
+        const passwordInput = page.locator('input[type="password"]').first();
+        await expect(passwordInput).toBeVisible({ timeout: 5000 });
+        await passwordInput.fill('Test@123');
+
+        const submitBtn = page.locator('button[type="submit"]:has-text("Sign In")').first();
+        await submitBtn.click();
+
+        await expect(page.locator('text=Monthly Budget').first()).toBeVisible({ timeout: 15000 });
+
+        await page.evaluate(() => {
+          try {
+            localStorage.setItem('et_tour_completed_rajmailtemp@gmail.com', 'true');
+            localStorage.setItem('et_tour_completed_all', 'true');
+            localStorage.setItem('expense_tracker_welcome_shown', 'true');
+            localStorage.setItem('has_seen_welcome_greeting', 'true');
+          } catch (e) {}
+        });
+      },
+
       // Login as new user through standard Create Account registration flow
       async loginAsNewUser(email, name = 'Test User') {
         await page.goto('/');

@@ -186,7 +186,7 @@ function isPaceOrBurnRateIntent(lower) {
 }
 
 function isCategoryBreakdownIntent(lower) {
-  return /\b(?:category|categories|breakdown|where\s*did\s*my\s*money|kahan\s*kharcha|food\s*spend|travel\s*spend|grocery|shopping)\b/i.test(lower) &&
+  return /\b(?:category|categories|breakdown|where\s*(?:did|is)\s*(?:all\s*)?my\s*money|where.*money.*going|kahan\s*kharcha|food\s*spend|travel\s*spend|grocery|shopping)\b/i.test(lower) &&
          !/\b(?:chai\s*\d|\d+\s*chai|spent\s*\d)\b/i.test(lower);
 }
 

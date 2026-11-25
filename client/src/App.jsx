@@ -388,7 +388,9 @@ function MainApp() {
 
       // First-time onboarding tour check for new accounts
       const tourKey = 'et_tour_completed_' + (user?.uid || user?.email || 'guest');
-      const alreadySeen = localStorage.getItem(tourKey) === 'true';
+      const alreadySeen = localStorage.getItem(tourKey) === 'true' || 
+                          (user?.email && localStorage.getItem('et_tour_completed_' + user.email) === 'true') ||
+                          localStorage.getItem('et_tour_completed_all') === 'true';
       const budgetZero = (parseFloat(updatedSettings.monthly_budget) || 0) === 0;
 
       if (!isRaj && !alreadySeen && (budgetZero || !sett.onboarding_completed)) {

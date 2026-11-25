@@ -197,6 +197,56 @@ export function parseSmsNotification(rawText = '') {
     }
   }
 
+  // 1c. Amount-first shorthand: e.g. "50 chai", "120 lunch", "40 auto upi"
+  const shorthandMatch3 = text.match(/^(?:₹|rs\.?|inr)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s+([A-Za-z\s&'-]+?)(?:\s+(upi|cash|card|net\s*banking))?$/i);
+  if (shorthandMatch3 && shorthandMatch3[1] && shorthandMatch3[2]) {
+    const amt = parseFloat(shorthandMatch3[1]);
+    const rawMerchant = shorthandMatch3[2].trim();
+    if (!isNaN(amt) && amt > 0 && !/^(?:people|persons|months|days|weeks|percent|%)/i.test(rawMerchant)) {
+      const mode = shorthandMatch3[3] ? normalizePaymentMode(shorthandMatch3[3]) : 'UPI';
+      const cat = predictCategory(rawMerchant);
+      return {
+        success: true,
+        amount: amt,
+        type: 'expense',
+        merchant: cleanMerchantName(rawMerchant),
+        category: cat,
+        paymentMode: mode,
+        date: new Date().toISOString().slice(0, 10),
+        accountLast4: null,
+        balance: null,
+        bankOrApp: 'Manual Quick Add',
+        confidence: 95,
+        rawText: text
+      };
+    }
+  }
+
+  // 1d. Refund / Income shorthand: e.g. "Refund 650 Amazon", "Received 1200 from Rahul"
+  const incomeShorthandMatch = text.match(/^(?:refund|income|received|salary|cashback|credited)\s+(?:₹|rs\.?|inr)?\s*([0-9]+(?:\.[0-9]{1,2})?)(?:\s+(?:from|by|via|for|at)?\s*([A-Za-z0-9\s&'-]+?))?(?:\s+(?:via|by|with)\s+(upi|cash|card|net\s*banking))?$/i);
+  if (incomeShorthandMatch && incomeShorthandMatch[1]) {
+    const amt = parseFloat(incomeShorthandMatch[1]);
+    const rawMerchant = (incomeShorthandMatch[2] || 'Refund / Income').trim();
+    if (!isNaN(amt) && amt > 0) {
+      const mode = incomeShorthandMatch[3] ? normalizePaymentMode(incomeShorthandMatch[3]) : 'UPI';
+      const cat = predictCategory(rawMerchant);
+      return {
+        success: true,
+        amount: amt,
+        type: 'income',
+        merchant: cleanMerchantName(rawMerchant),
+        category: cat,
+        paymentMode: mode,
+        date: new Date().toISOString().slice(0, 10),
+        accountLast4: null,
+        balance: null,
+        bankOrApp: 'Income / Refund',
+        confidence: 95,
+        rawText: text
+      };
+    }
+  }
+
   // 2. Transaction Type: Debit / Spent vs Credit / Refund
   const isCredit = /(?:credited|refund(?:ed)?|received|cashback|added\s+to)/i.test(lower) && 
                    !/(?:debited|spent|paid\s+to)/i.test(lower);

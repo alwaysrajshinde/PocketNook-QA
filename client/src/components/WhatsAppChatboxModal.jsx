@@ -685,7 +685,9 @@ export default function WhatsAppChatboxModal({
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               onClick={handleClearChat}
-              title="Clear chat"
+              data-testid="copilot-clear-chat-btn"
+              title="Clear Chat History"
+              aria-label="Clear Chat History"
               className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] active:scale-95 border border-slate-200/60 dark:border-white/[0.06] flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
             >
               <Trash2 size={15} />

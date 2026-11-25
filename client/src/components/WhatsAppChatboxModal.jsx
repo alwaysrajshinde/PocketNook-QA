@@ -464,7 +464,8 @@ export default function WhatsAppChatboxModal({
   recentTransactions = [],
   formatCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`,
   categories = [],
-  userId = 'guest'
+  userId = 'guest',
+  userName = ''
 }) {
   const { showToast } = useToast();
   const { isStreaming, streamChat, stopGenerating, clearServerSession } = useChatStream();
@@ -811,6 +812,7 @@ export default function WhatsAppChatboxModal({
         onDeleteExpense,
         learnedCategories: prefs.learnedCategories,
         customCategories: categories,
+        userName,
         budgetRatios: prefs.budgetRatios,
         onUpdateBudgetRatios: async (newRatios) => {
           const updated = await saveBudgetRatios(userId, newRatios);

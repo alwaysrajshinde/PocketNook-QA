@@ -1077,6 +1077,7 @@ function MainApp() {
         formatCurrency={formatCurrency}
         categories={categories}
         userId={user?.uid || user?.email || 'guest'}
+        userName={user?.name || user?.displayName || ''}
       />
 
       {/* Feature 1: SMS & UPI Smart Parser Modal */}

@@ -195,9 +195,17 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
       expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.88);
     }
 
-    // 3. Normal conversational chat (small talk, health check, static 404 fallback without scary error banner)
+    // 3. Normal conversational chat ("Hello", "My name", small talk, health check)
     const input = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
+
+    await input.fill('Hello');
+    await sendBtn.click();
+    await expect(modal.locator('text=How can I help today?').first()).toBeVisible({ timeout: 10000 });
+
+    await input.fill('My name');
+    await sendBtn.click();
+    await expect(modal.locator('text=stay strictly on-device').first()).toBeVisible({ timeout: 10000 });
 
     await input.fill('how are you?');
     await sendBtn.click();

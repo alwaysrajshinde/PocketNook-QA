@@ -143,7 +143,8 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     onUpdateBudgetRatios = null,
     forceLog = false,
     targetTxId = null,
-    lastLoggedBatch = null
+    lastLoggedBatch = null,
+    userName = ''
   } = context;
 
   const now = new Date();
@@ -185,12 +186,15 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     }
   }
 
-  // 1. GREETING, SMALL TALK & ASSISTANT IDENTITY
+  // 1. GREETING, PERSONAL NAME (ON-DEVICE), SMALL TALK & ASSISTANT IDENTITY
+  if (isPersonalNameIntent(lower)) {
+    return wrapResult(handlePersonalNameIntent(userName));
+  }
   if (isSmallTalkOrFeedbackIntent(lower)) {
     return wrapResult(handleSmallTalkOrFeedback(lower, snapshot, formatCurrency));
   }
   if (isGreetingOrIdentity(lower)) {
-    return wrapResult(handleGreetingResponse(snapshot, formatCurrency));
+    return wrapResult(handleGreetingResponse(snapshot, formatCurrency, userName, lower));
   }
 
   // 1b. NATURAL BUDGET HEALTH & TOP/LATEST EXPENSE INSIGHT
@@ -349,6 +353,7 @@ export function canHandleLocally(rawInput = '', context = {}) {
 
   if (/^apply\s+(\d{2})\/(\d{2})\/(\d{2})/i.test(lower)) return true;
   if (
+    isPersonalNameIntent(lower) ||
     isSmallTalkOrFeedbackIntent(lower) ||
     isGreetingOrIdentity(lower) ||
     isSpendingInsightIntent(lower) ||
@@ -393,6 +398,22 @@ export function canHandleLocally(rawInput = '', context = {}) {
 /* ========================================================
    INTENT CLASSIFIERS
    ======================================================== */
+
+function isPersonalNameIntent(lower) {
+  return /\b(?:my\s+name|what(?:'s|\s+is)\s+my\s+name|tell\s+me\s+my\s+name|who\s+am\s+i|mera\s+naam|mera\s+name)\b/i.test(lower);
+}
+
+function handlePersonalNameIntent(userName = '') {
+  const cleanName = String(userName || '').trim();
+  const replyText = cleanName
+    ? `Your name on this account is *${cleanName}*.\n\n_For privacy, your name and account identity stay strictly on-device and are never sent to external AI._`
+    : `You're signed in to your personal PocketNook vault. For privacy, personal account details stay strictly on-device.`;
+  return {
+    replyText,
+    type: 'personal_identity',
+    suggestedChips: ['Summary', 'Daily Pace', 'Chai 20']
+  };
+}
 
 function isGreetingOrIdentity(lower) {
   return /^(?:hi|hello|hey|namaste|hola|good\s*(?:morning|afternoon|evening)|who\s*are\s*you|what\s*can\s*you\s*do|help|bhai)\b/i.test(lower);
@@ -582,7 +603,23 @@ function handleConversationalFallback(text, snapshot, formatCurrency) {
   };
 }
 
-function handleGreetingResponse(snapshot, formatCurrency) {
+function handleGreetingResponse(snapshot, formatCurrency, userName = '', lower = '') {
+  const isHelpOrCapabilities = /\b(?:who\s*are\s*you|what\s*can\s*you\s*do|help)\b/i.test(lower);
+  const firstName = String(userName || '').trim().split(/\s+/)[0];
+  const greetingPrefix = firstName ? `Hey ${firstName}!` : 'Hello!';
+
+  if (!isHelpOrCapabilities) {
+    const replyText =
+      `${greetingPrefix} How can I help today?\n\n` +
+      `Your safe pool currently has *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*). ` +
+      `Feel free to chat naturally, ask about your spending, or type an expense like \`Chai 20\`.`;
+    return {
+      replyText,
+      type: 'greeting',
+      suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', 'Chai 20']
+    };
+  }
+
   const replyText =
     `*PocketNook Chat Active*\n\n` +
     `Privacy-first expense assistant: sensitive numbers are masked locally before processing. Try these examples:\n\n` +

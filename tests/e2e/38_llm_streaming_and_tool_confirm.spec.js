@@ -188,11 +188,11 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     });
     expect(isInputFocusedOnOpen).toBe(false);
 
-    // 2. Partial floating drawer height on mobile (not full-screen: between 65% and 84% of viewport, with HUD removed)
+    // 2. Balanced drawer height on mobile (80% of viewport: not half-screen, not full-screen)
     const vp = page.viewportSize();
     if (vp && vp.width < 640) {
       const cardBox = await modal.locator('> div').first().boundingBox();
-      expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.65);
+      expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.76);
       expect(cardBox && cardBox.height).toBeLessThanOrEqual(vp.height * 0.84);
     }
     await expect(modal.locator('text=SAFE PACE')).toHaveCount(0);

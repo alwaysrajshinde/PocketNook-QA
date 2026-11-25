@@ -1269,10 +1269,13 @@ export default function WhatsAppChatboxModal({
   if (!shouldRender) return null;
 
   const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 640;
+  const isKeyboardOpen = isMobileViewport && viewportHeight && (window.innerHeight - viewportHeight > 120);
   const mobileDynamicStyle = isMobileViewport && viewportHeight
     ? {
-        height: `${Math.min(Math.round(viewportHeight * 0.74), Math.max(360, viewportHeight - 16))}px`,
-        maxHeight: `${Math.max(360, viewportHeight - 16)}px`
+        height: isKeyboardOpen
+          ? `${Math.max(360, viewportHeight - 12)}px`
+          : `${Math.round(viewportHeight * 0.8)}px`,
+        maxHeight: `${Math.max(360, viewportHeight - 12)}px`
       }
     : undefined;
 
@@ -1293,7 +1296,7 @@ export default function WhatsAppChatboxModal({
         ref={modalCardRef}
         onClick={(e) => e.stopPropagation()}
         style={mobileDynamicStyle}
-        className={`relative w-full sm:max-w-lg h-[74dvh] sm:h-[76vh] sm:max-h-[620px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[28px] sm:rounded-[32px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+        className={`relative w-full sm:max-w-lg h-[80dvh] sm:h-[78vh] sm:max-h-[660px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[28px] sm:rounded-[32px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
           isAnimating ? 'translate-y-0 sm:scale-100' : 'translate-y-full sm:translate-y-8 sm:scale-95'
         }`}
       >

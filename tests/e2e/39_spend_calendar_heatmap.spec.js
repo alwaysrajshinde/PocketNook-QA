@@ -2,7 +2,7 @@
 const { test, expect } = require('../fixtures/auth.fixture');
 const { cleanTestUsers } = require('../helpers/dbHelper');
 
-test.describe('Area 39: Visual Spend Pulse Graph (Wave, Radar & Orbit)', () => {
+test.describe('Area 39: Optimized Liquid Spend Wave Graph', () => {
   test.afterAll(() => {
     cleanTestUsers();
   });
@@ -19,7 +19,7 @@ test.describe('Area 39: Visual Spend Pulse Graph (Wave, Radar & Orbit)', () => {
     }
   }
 
-  test('39.1: SpeedChips stays intact and Visual Spend Pulse switches Wave, Radar, and Orbit graphs without currency clutter', async ({ page, authHelpers }) => {
+  test('39.1: Liquid Spend Wave renders smooth curve, Peak/Latest snap controls, and scrubs cleanly without currency clutter', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await ensureCleanHome(page);
 
@@ -27,22 +27,23 @@ test.describe('Area 39: Visual Spend Pulse Graph (Wave, Radar & Orbit)', () => {
     await expect(card).toBeVisible({ timeout: 10000 });
     await expect(page.locator('[data-testid="speed-chips-strip"]').first()).toBeVisible();
 
-    // Wave View
-    await expect(card.locator('[data-testid="graph-view-wave"]')).toBeVisible();
-    const waveText = await card.innerText();
-    expect(waveText.includes('₹')).toBe(false);
-    expect(waveText.includes('%')).toBe(false);
+    // Radar and Orbit modes are removed
+    await expect(card.locator('[data-testid="graph-mode-radar"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="graph-mode-orbit"]')).toHaveCount(0);
 
-    // Switch to Radar View
-    await card.locator('[data-testid="graph-mode-radar"]').click();
-    await expect(card.locator('[data-testid="graph-view-radar"]')).toBeVisible();
-    const radarText = await card.innerText();
-    expect(radarText.includes('₹')).toBe(false);
+    // Wave SVG + spotlight pill render cleanly with zero rupee/percentage figures
+    await expect(card.locator('[data-testid="liquid-wave-svg"]')).toBeVisible();
+    const spotlight = card.locator('[data-testid="wave-spotlight-pill"]');
+    await expect(spotlight).toBeVisible();
 
-    // Switch to Orbit View
-    await card.locator('[data-testid="graph-mode-orbit"]').click();
-    await expect(card.locator('[data-testid="graph-view-orbit"]')).toBeVisible();
-    const orbitText = await card.innerText();
-    expect(orbitText.includes('₹')).toBe(false);
+    const text = await card.innerText();
+    expect(text.includes('₹')).toBe(false);
+    expect(text.includes('%')).toBe(false);
+
+    // Test Peak & Latest snap controls + pointer scrub on SVG
+    await card.locator('[data-testid="wave-jump-peak"]').click();
+    await expect(spotlight).toBeVisible();
+    await card.locator('[data-testid="wave-jump-latest"]').click();
+    await expect(spotlight).toBeVisible();
   });
 });

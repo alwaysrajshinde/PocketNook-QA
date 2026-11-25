@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pocketnook-cache-v15';
+const CACHE_NAME = 'pocketnook-cache-v16';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -67,9 +67,9 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           console.log('[SW v3] Offline navigation detected; serving cached App Shell');
-          const cachedShell = await caches.match('./index.html') || 
-                              await caches.match('./') || 
-                              await caches.match('index.html');
+          const cachedShell = await caches.match('./index.html') ||
+            await caches.match('./') ||
+            await caches.match('index.html');
           return cachedShell || new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         })
     );

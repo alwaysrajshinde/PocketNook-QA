@@ -5,10 +5,10 @@
 
 export const APP_VERSION = 'v2.4.5';
 export const APP_RELEASE_DATE = 'November 26, 2026';
-export const APP_RELEASE_TIME = '12:16 AM';
+export const APP_RELEASE_TIME = '12:26 AM';
 export const APP_SHORT_DATE = '26 Nov 2026';
-export const APP_INKED_DATETIME = '26 Nov 2026, 12:16 AM';
-export const APP_BUILD_TIMESTAMP = '2026-11-25T18:46:42.264Z';
+export const APP_INKED_DATETIME = '26 Nov 2026, 12:26 AM';
+export const APP_BUILD_TIMESTAMP = '2026-11-25T18:56:44.268Z';
 
 // Inked version string combining version number and exact release date & time
 export const APP_INKED_VERSION = `${APP_VERSION} · Updated ${APP_SHORT_DATE} at ${APP_RELEASE_TIME}`;

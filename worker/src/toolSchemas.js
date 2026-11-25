@@ -1,6 +1,6 @@
-const { z } = require('zod');
+import { z } from 'zod';
 
-const ALLOWED_CATEGORIES = [
+export const ALLOWED_CATEGORIES = [
   'Food & Dining',
   'Groceries',
   'Transportation',
@@ -13,7 +13,7 @@ const ALLOWED_CATEGORIES = [
   'Other'
 ];
 
-const ALLOWED_PAYMENT_MODES = ['UPI', 'Card', 'Cash', 'Net Banking'];
+export const ALLOWED_PAYMENT_MODES = ['UPI', 'Card', 'Cash', 'Net Banking'];
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -24,7 +24,7 @@ function isValidCalendarDate(dateStr) {
   return parsed.toISOString().slice(0, 10) === dateStr;
 }
 
-const LogExpenseSchema = z.object({
+export const LogExpenseSchema = z.object({
   amount: z.number().finite().positive().lt(10_000_000),
   merchant: z.string().trim().min(1).max(80),
   category: z.enum(ALLOWED_CATEGORIES),
@@ -34,30 +34,30 @@ const LogExpenseSchema = z.object({
   confidence: z.number().min(0).max(1)
 }).strict();
 
-const LogMultipleExpensesSchema = z.object({
+export const LogMultipleExpensesSchema = z.object({
   items: z.array(LogExpenseSchema).min(1).max(10)
 }).strict();
 
-const UndoLastSchema = z.object({
+export const UndoLastSchema = z.object({
   scope: z.enum(['last_item', 'last_batch']).default('last_item')
 }).strict();
 
-const SplitBillSchema = z.object({
+export const SplitBillSchema = z.object({
   total: z.number().finite().positive().lt(10_000_000),
   people: z.number().int().min(2).max(100),
   includeSelf: z.boolean().default(true)
 }).strict();
 
-const GetCategoryBreakdownSchema = z.object({
+export const GetCategoryBreakdownSchema = z.object({
   category: z.string().trim().max(40).optional(),
   period: z.enum(['this_month', 'today', 'this_week']).default('this_month')
 }).strict();
 
-const SetBudgetSchema = z.object({
+export const SetBudgetSchema = z.object({
   amount: z.number().finite().positive().lt(100_000_000)
 }).strict();
 
-const TOOL_SCHEMAS = {
+export const TOOL_SCHEMAS = {
   log_expense: LogExpenseSchema,
   log_multiple_expenses: LogMultipleExpensesSchema,
   undo_last: UndoLastSchema,
@@ -66,27 +66,27 @@ const TOOL_SCHEMAS = {
   set_budget: SetBudgetSchema
 };
 
-const SnapshotCategorySchema = z.object({
+export const SnapshotCategorySchema = z.object({
   category: z.string().max(40),
   amount: z.number().finite().nonnegative(),
   pctOfSpend: z.number().finite().min(0).max(100)
-});
+}).strict();
 
-const SnapshotTxSchema = z.object({
+export const SnapshotTxSchema = z.object({
   date: z.string().max(12),
   amount: z.number().finite().nonnegative(),
   category: z.string().max(40),
   merchantGeneric: z.string().max(60),
   mode: z.string().max(24)
-});
+}).strict();
 
-const SnapshotFixedSchema = z.object({
+export const SnapshotFixedSchema = z.object({
   name: z.string().max(60),
   amount: z.number().finite().nonnegative(),
   dueDate: z.string().max(12)
-});
+}).strict();
 
-const SafeContextSchema = z.object({
+export const SafeContextSchema = z.object({
   month: z.string().max(10),
   currency: z.string().max(8).default('INR'),
   monthlyBudget: z.number().finite().nonnegative(),
@@ -98,21 +98,21 @@ const SafeContextSchema = z.object({
   categoryTotals: z.array(SnapshotCategorySchema).max(12).default([]),
   recentTransactions: z.array(SnapshotTxSchema).max(10).default([]),
   upcomingFixed: z.array(SnapshotFixedSchema).max(6).optional()
-});
+}).strict();
 
-const ChatTurnSchema = z.object({
+export const ChatTurnSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().max(1000)
-});
+}).strict();
 
-const ChatRequestSchema = z.object({
+export const ChatRequestSchema = z.object({
   message: z.string().trim().min(1).max(2000),
   isSmsPaste: z.boolean().optional().default(false),
   history: z.array(ChatTurnSchema).max(8).optional().default([]),
   olderSummary: z.string().max(300).nullable().optional(),
   context: SafeContextSchema.nullable().optional(),
   requestId: z.string().max(80).optional()
-}).superRefine((val, ctx) => {
+}).strict().superRefine((val, ctx) => {
   const maxLen = val.isSmsPaste ? 2000 : 1000;
   if (val.message.length > maxLen) {
     ctx.addIssue({
@@ -124,9 +124,11 @@ const ChatRequestSchema = z.object({
 });
 
 /**
- * Validates an LLM tool call against strict Zod schemas and enforces confirmation rules.
+ * Validates an LLM tool call against strict Zod schemas.
+ * Every ledger mutation (including single expense logs regardless of amount/confidence)
+ * unconditionally requires explicit user confirmation.
  */
-function validateToolCall(name, rawArgs) {
+export function validateToolCall(name, rawArgs) {
   const schema = TOOL_SCHEMAS[name];
   if (!schema) {
     return { valid: false, error: `Unsupported tool: ${String(name)}` };
@@ -141,15 +143,8 @@ function validateToolCall(name, rawArgs) {
   }
 
   const args = parsed.data;
-  let requiresConfirm = true;
-  if (name === 'get_category_breakdown' || name === 'split_bill') {
-    requiresConfirm = false;
-  } else if (name === 'log_expense') {
-    // Only low-value (< ₹500) AND high-confidence (> 0.9) may auto-log with Undo toast
-    requiresConfirm = !(args.amount < 500 && args.confidence > 0.9);
-  } else if (name === 'set_budget') {
-    requiresConfirm = true;
-  }
+  const isReadOnlyOrCalc = name === 'get_category_breakdown' || name === 'split_bill';
+  const requiresConfirm = !isReadOnlyOrCalc;
 
   return {
     valid: true,
@@ -158,18 +153,3 @@ function validateToolCall(name, rawArgs) {
     requiresConfirm
   };
 }
-
-module.exports = {
-  ALLOWED_CATEGORIES,
-  ALLOWED_PAYMENT_MODES,
-  LogExpenseSchema,
-  LogMultipleExpensesSchema,
-  UndoLastSchema,
-  SplitBillSchema,
-  GetCategoryBreakdownSchema,
-  SetBudgetSchema,
-  SafeContextSchema,
-  ChatRequestSchema,
-  TOOL_SCHEMAS,
-  validateToolCall
-};

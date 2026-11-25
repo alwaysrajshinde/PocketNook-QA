@@ -34,9 +34,15 @@ jobs:
           npm ci
 
       - name: Build Application for GitHub Pages
+        env:
+          VITE_IS_QA: ${{ github.repository == 'alwaysrajshinde/PocketNook-QA' && 'true' || 'false' }}
         run: |
           cd client
           npm run build
+
+      - name: Apply QA Branding (PocketNook-QA repo only)
+        if: github.repository == 'alwaysrajshinde/PocketNook-QA'
+        run: node scripts/apply-qa-branding.mjs
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

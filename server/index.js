@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const routes = require('./routes');
-const { isOriginAllowed } = require('../functions/chatCore/authMiddleware');
+const { isOriginAllowed } = require('./devChatRouter');
 
 const app = express();
 const PORT = process.env.PORT || 3001;

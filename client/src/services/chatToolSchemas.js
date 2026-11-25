@@ -80,14 +80,9 @@ export function validateClientToolCall(name, rawArgs) {
     };
   }
   const args = parsed.data;
-  let requiresConfirm = true;
-  if (name === 'get_category_breakdown' || name === 'split_bill') {
-    requiresConfirm = false;
-  } else if (name === 'log_expense') {
-    requiresConfirm = !(args.amount < 500 && args.confidence > 0.9);
-  } else if (name === 'set_budget') {
-    requiresConfirm = true;
-  }
+  const isReadOnlyOrCalc = name === 'get_category_breakdown' || name === 'split_bill';
+  // Never auto-log AI-proposed expenses: require explicit Confirm tap every time.
+  const requiresConfirm = !isReadOnlyOrCalc;
 
   return { valid: true, name, args, requiresConfirm };
 }

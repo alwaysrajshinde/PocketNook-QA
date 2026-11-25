@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { IS_QA, APP_DISPLAY_NAME } from '../utils/appBrand';
 import {
   Wallet,
   CheckCircle2,
@@ -332,14 +333,19 @@ export default function AuthGate({ children }) {
 
         {/* Brand Header */}
         <div className="text-center space-y-2 mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#371485] to-[#763cf8] text-white flex items-center justify-center mx-auto shadow-lg shadow-purple-600/30">
+          <div className={`relative w-14 h-14 rounded-2xl text-white flex items-center justify-center mx-auto shadow-lg ${IS_QA ? 'bg-gradient-to-tr from-amber-700 to-amber-500 shadow-amber-600/30' : 'bg-gradient-to-tr from-[#371485] to-[#763cf8] shadow-purple-600/30'}`}>
             <Wallet size={28} />
+            {IS_QA && (
+              <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 bg-slate-900 text-amber-300 border border-amber-300 text-[9px] font-black rounded-md tracking-wider">
+                QA
+              </span>
+            )}
           </div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            PocketNook
+            {APP_DISPLAY_NAME}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
-            Your personal financial sanctuary with multi-device synchronization and private records
+            {IS_QA ? 'QA staging environment for testing — not production' : 'Your personal financial sanctuary with multi-device synchronization and private records'}
           </p>
         </div>
 

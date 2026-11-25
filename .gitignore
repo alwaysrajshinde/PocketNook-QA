@@ -1,7 +1,8 @@
 # Dependencies
 node_modules/
 client/node_modules/
-functions/node_modules/
+worker/node_modules/
+worker/.wrangler/
 
 # Production build outputs
 client/dist/

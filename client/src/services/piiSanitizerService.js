@@ -68,9 +68,9 @@ export function sanitizeFinancialText(rawText = '') {
   // Strip executable HTML / script payloads before storage or display
   if (/<[^>]+>/i.test(text)) {
     text = text.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-               .replace(/<[^>]*>/g, ' ')
-               .replace(/\s{2,}/g, ' ')
-               .trim();
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   const redactedTypes = new Set();

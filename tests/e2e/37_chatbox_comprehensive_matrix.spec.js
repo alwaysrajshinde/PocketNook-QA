@@ -339,7 +339,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     // Verify polite helpful guidance instead of crash or error
-    await expect(modal.locator('text=I\'m here to help with your finances:').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=I couldn\'t recognize an expense or command in that message').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('text=50/30/20 rule').first()).toBeVisible();
 
     await modal.locator('button[aria-label="Back"]').click();
@@ -353,7 +353,7 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const modal = await openChatbox(page);
 
     // Verify honest privacy notice badge
-    await expect(modal.locator('text=Sensitive numbers are masked before AI processing').first()).toBeVisible();
+    await expect(modal.locator('text=Sensitive numbers are masked before processing').first()).toBeVisible();
 
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sensitiveSms = 'Alert: Rs.850.00 debited from HDFC Bank A/c **4912 on 25-NOV-26 to SWIGGY. Card ending 4412. UTR: 2948104819. Avl bal: Rs.14,250.00. Help: 9876543210.';
@@ -453,17 +453,24 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
     const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
 
-    // 1. Multi-item with Indian comma amount ("1,200 lunch" must NOT split at the comma!)
-    await chatInput.fill('50 chai, 1,200 lunch, 40 auto');
+    // 1. Multi-item with Indian comma amount ("1,XXX lunch" must NOT split at the comma; unique amounts prevent duplicate-guard skip across runs)
+    const tick = Math.floor(Date.now() / 1000);
+    const chaiAmt = 51 + (tick % 17);
+    const lunchAmt = 1201 + (tick % 697);
+    const autoAmt = 41 + ((tick >> 2) % 17);
+    const hinglishAmt = 31 + ((tick >> 3) % 17);
+    const lunchFormatted = lunchAmt.toLocaleString('en-IN');
+    const batchTotalFormatted = (chaiAmt + lunchAmt + autoAmt).toLocaleString('en-IN');
+    await chatInput.fill(`${chaiAmt} poha, ${lunchFormatted} thali, ${autoAmt} rickshaw`);
     await sendBtn.click();
     await expect(modal.locator('text=Batch Expenses Recorded (3 Items)').first()).toBeVisible({ timeout: 10000 });
-    await expect(modal.locator('text=₹1,290').first()).toBeVisible();
+    await expect(modal.locator(`text=₹${batchTotalFormatted}`).first()).toBeVisible();
 
-    // 2. Hinglish expense shorthand ("chai pe 30 kharch kiya")
-    await chatInput.fill('chai pe 30 kharch kiya');
+    // 2. Hinglish expense shorthand ("chai pe XX kharch kiya")
+    await chatInput.fill(`chai pe ${hinglishAmt} kharch kiya`);
     await sendBtn.click();
     await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
-    await expect(modal.locator('text=₹30').first()).toBeVisible();
+    await expect(modal.locator(`text=₹${hinglishAmt}`).first()).toBeVisible();
 
     // 3. Relative date + suffix currency + k notation ("Uber 1.5k yesterday")
     await chatInput.fill('Uber 1.5k yesterday');
@@ -504,8 +511,12 @@ test.describe('Area 37: Exhaustive Chatbox Matrix (Positive, Negative, Edge & Se
     const modal = await openChatbox(page);
     const chatInput = modal.locator('[data-testid="whatsapp-chat-input"]');
 
-    // 10,000 out of 12,000 budget (~83% -> 75%-100% Tight Squeeze)
-    await chatInput.fill('Can I afford 10k phone?');
+    // Read live remaining safe pool from the telemetry HUD so prior tests don't skew 75%-100% calculation
+    const hudRemainingText = await modal.locator('span:has-text("Remaining") + span').first().innerText().catch(() => '12000');
+    const numericRem = Number(hudRemainingText.replace(/[^0-9.]/g, '')) || 12000;
+    const target85 = Math.max(100, Math.round(numericRem * 0.85));
+
+    await chatInput.fill(`Can I afford ${target85}?`);
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     await expect(modal.locator('text=Affordability Financial Diagnosis').first()).toBeVisible({ timeout: 10000 });

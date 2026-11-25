@@ -1,4 +1,5 @@
 import React from 'react';
+import { IS_QA, APP_DISPLAY_NAME } from '../utils/appBrand';
 import { 
   Wallet, 
   ShieldCheck, 
@@ -33,14 +34,21 @@ export default function PublicLanding({ onOpenAuth, onOpenLegal }) {
       {/* 1. TOP NAVBAR */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#120F24]/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-8 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#5B27DC] via-[#6C47FF] to-[#A855F7] text-white flex items-center justify-center font-black text-base shadow-md shadow-purple-600/30">
+          <div className={`relative w-9 h-9 rounded-2xl text-white flex items-center justify-center font-black text-base shadow-md ${IS_QA ? 'bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-400 shadow-amber-600/30' : 'bg-gradient-to-tr from-[#5B27DC] via-[#6C47FF] to-[#A855F7] shadow-purple-600/30'}`}>
             ₹
+            {IS_QA && (
+              <span className="absolute -bottom-1 -right-1 px-1 bg-slate-900 text-amber-300 border border-amber-300 text-[8px] font-black rounded">
+                QA
+              </span>
+            )}
           </div>
           <div>
             <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight block">
-              PocketNook
+              {APP_DISPLAY_NAME}
             </span>
-            <span className="text-[10px] text-slate-400 font-medium">Smart Personal Finance</span>
+            <span className={`text-[10px] font-medium ${IS_QA ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-400'}`}>
+              {IS_QA ? 'QA Staging Build' : 'Smart Personal Finance'}
+            </span>
           </div>
         </div>
 

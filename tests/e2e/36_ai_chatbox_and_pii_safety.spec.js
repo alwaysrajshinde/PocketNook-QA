@@ -32,7 +32,7 @@ test.describe('Area 36: Full AI Financial Copilot & Zero-Leakage PII Safety', ()
     await expect(modal).toBeVisible();
     await expect(modal.locator('h3:has-text("PocketNook")').first()).toBeVisible();
     await expect(modal.locator('text=Privacy-First').first()).toBeVisible();
-    await expect(modal.locator('text=Sensitive numbers are masked before AI processing').first()).toBeVisible();
+    await expect(modal.locator('text=Sensitive numbers are masked before processing').first()).toBeVisible();
 
     // Close modal
     await modal.locator('button[aria-label="Back"]').click();

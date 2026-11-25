@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { APP_VERSION, APP_SHORT_DATE, APP_RELEASE_DATE, APP_RELEASE_TIME } from '../constants/version';
 import { useLanguage } from '../context/LanguageContext';
+import { IS_QA, APP_DISPLAY_NAME } from '../utils/appBrand';
 
 export default function WindowsSidebar({
   activeTab,
@@ -51,15 +52,20 @@ export default function WindowsSidebar({
       <div>
         {/* Brand Header */}
         <div className="p-6 pb-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#371485] to-[#763cf8] text-white flex items-center justify-center shadow-md shadow-purple-900/20">
+          <div className={`relative w-9 h-9 rounded-xl text-white flex items-center justify-center shadow-md ${IS_QA ? 'bg-gradient-to-tr from-amber-700 to-amber-500 shadow-amber-900/25' : 'bg-gradient-to-tr from-[#371485] to-[#763cf8] shadow-purple-900/20'}`}>
             <Wallet size={18} />
+            {IS_QA && (
+              <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-slate-900 text-amber-300 border border-amber-300 text-[8px] font-black rounded leading-tight">
+                QA
+              </span>
+            )}
           </div>
           <div>
             <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight block">
-              PocketNook
+              {APP_DISPLAY_NAME}
             </span>
-            <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase block">
-              Personal Vault
+            <span className={`text-[10px] font-semibold tracking-wider uppercase block ${IS_QA ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+              {IS_QA ? 'QA Environment' : 'Personal Vault'}
             </span>
           </div>
         </div>

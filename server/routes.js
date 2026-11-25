@@ -737,40 +737,9 @@ router.post('/webhook/whatsapp', (req, res) => {
 // ========================================================
 // 10. STREAMING AI CHAT ENDPOINT (/api/chat) FOR DEV & CI
 // ========================================================
-const { createAuthMiddleware } = require('../functions/chatCore/authMiddleware');
-const { createRateLimiter, createMemoryRateStore } = require('../functions/chatCore/rateLimiter');
-const { createLLMAdapter } = require('../functions/chatCore/llmAdapter');
-const { createChatHandler } = require('../functions/chatCore/chatHandler');
+const { handleDevChatPost, handleDevChatDeleteSession } = require('./devChatRouter');
 
-const devRateLimiter = createRateLimiter({ store: createMemoryRateStore() });
-
-let devAdminAuth = null;
-try {
-  const admin = require('firebase-admin');
-  if (admin.apps.length > 0) {
-    devAdminAuth = admin.auth();
-  }
-} catch (e) {}
-
-const authenticateChat = createAuthMiddleware({
-  adminAuth: devAdminAuth,
-  allowTestAuth: process.env.NODE_ENV !== 'production'
-});
-
-const { handlePostChat, handleDeleteSession } = createChatHandler({
-  rateLimiter: devRateLimiter,
-  getAdapter: () => {
-    const provider = process.env.LLM_PROVIDER || (process.env.NODE_ENV !== 'production' ? 'mock' : '');
-    const model = process.env.LLM_MODEL || (provider === 'mock' ? 'mock-fixture-v1' : '');
-    return createLLMAdapter({
-      provider,
-      model,
-      apiKey: process.env.LLM_API_KEY || ''
-    });
-  }
-});
-
-router.post('/chat', authenticateChat, handlePostChat);
-router.delete('/chat/session', authenticateChat, handleDeleteSession);
+router.post('/chat', handleDevChatPost);
+router.delete('/chat/session', handleDevChatDeleteSession);
 
 module.exports = router;

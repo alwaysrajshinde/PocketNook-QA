@@ -14,6 +14,7 @@ import {
 } from '../services/aiAssistantService';
 import { sanitizeFinancialText, prepareSafeFinancialSnapshot } from '../services/piiSanitizerService';
 import { buildSafeChatContext, buildSanitizedConversationMemory } from '../services/chatContextService';
+import { IS_QA, CHAT_DISPLAY_NAME } from '../utils/appBrand';
 import {
   loadChatHistory,
   saveChatHistory,
@@ -944,8 +945,9 @@ export default function WhatsAppChatboxModal({
           }
         },
         onToolCall: async (tool) => {
-          if (!tool.requiresConfirm) {
-            // Auto-execute low-value high-confidence log (< ₹500, > 0.9) or read-only/split calculation
+          const isMutatingTool = ['log_expense', 'log_multiple_expenses', 'undo_last', 'set_budget'].includes(tool.name);
+          if (!tool.requiresConfirm && !isMutatingTool) {
+            // Auto-execute strictly for read-only/split calculations (get_category_breakdown, split_bill)
             const execRes = await executeValidatedToolCall(tool);
             if (execRes?.duplicateDetected) {
               setMessages((prev) => [
@@ -1028,15 +1030,17 @@ export default function WhatsAppChatboxModal({
       }
 
       if (!streamRes.ok) {
-        // Offline / timeout / rate-limit / provider error -> friendly retry notice + local engine fallback
+        // Offline / timeout / quota exhausted / AI_DISABLED / 5xx -> friendly local engine fallback (no retry loop)
         await runLocalFallback(`_${streamRes.friendlyError}_`);
-        setMessages((prev) =>
-          prev.map((m, idx) =>
-            idx === prev.length - 1
-              ? { ...m, actionButtons: [...(m.actionButtons || []), { label: 'Retry Online AI', query: raw }] }
-              : m
-          )
-        );
+        if (!streamRes.isQuotaOrDisabled) {
+          setMessages((prev) =>
+            prev.map((m, idx) =>
+              idx === prev.length - 1
+                ? { ...m, actionButtons: [...(m.actionButtons || []), { label: 'Retry Online AI', query: raw }] }
+                : m
+            )
+          );
+        }
       }
     } catch (err) {
       await runLocalFallback('_Online AI unavailable right now. Using local assistant._');
@@ -1319,15 +1323,15 @@ export default function WhatsAppChatboxModal({
             </button>
 
             <div className="relative flex-shrink-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#5B27DC] to-[#7B42F6] flex items-center justify-center shadow-md shadow-purple-600/30">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-md ${IS_QA ? 'bg-gradient-to-tr from-amber-700 to-amber-500 shadow-amber-600/30' : 'bg-gradient-to-tr from-[#5B27DC] to-[#7B42F6] shadow-purple-600/30'}`}>
                 <Sparkles size={18} className="text-white" />
               </div>
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#16132A] rounded-full shadow-xs" />
             </div>
 
             <div className="min-w-0 flex-1">
-              <h3 id="pocketnook-chat-title" className="font-bold text-[15px] sm:text-base tracking-tight text-slate-900 dark:text-white leading-tight">
-                PocketNook Chat
+              <h3 id="pocketnook-chat-title" className="font-bold text-[15px] sm:text-base tracking-tight text-slate-900 dark:text-white leading-tight flex items-center gap-1.5">
+                <span>{CHAT_DISPLAY_NAME}</span>
               </h3>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-[#5B27DC] dark:text-[#C4B5FD] border border-purple-300 dark:border-purple-400/35 flex-shrink-0">
@@ -1430,7 +1434,7 @@ export default function WhatsAppChatboxModal({
           <div className="mx-auto max-w-md text-center py-2 px-3.5 rounded-2xl bg-slate-200/80 dark:bg-white/[0.06] border border-slate-300/80 dark:border-white/[0.1] text-[10.5px] text-slate-700 dark:text-zinc-200 font-medium shadow-2xs space-y-1 select-none">
             <div className="flex items-center justify-center gap-1.5">
               <ShieldCheck size={13} className="text-[#5B27DC] dark:text-[#C4B5FD] flex-shrink-0" />
-              <span>Sensitive numbers are masked before AI processing. AI sees only a summary of your spending. You can turn this off anytime.</span>
+              <span>Sensitive numbers are masked before processing &amp; summary sharing is OFF by default. Note: free-tier AI prompts may be used by Google to improve its products.</span>
             </div>
             <div className="flex items-center justify-center gap-2 text-[10px] text-slate-600 dark:text-zinc-300">
               <span>Retention: last 200 sanitized messages in IndexedDB</span>

@@ -14,7 +14,7 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
         await btn.click();
         await page.waitForTimeout(500);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   test('35.1: Backend WhatsApp Webhook & Natural Language Parser API', async ({ request, baseURL }) => {
@@ -106,10 +106,10 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     const metroChip = page.locator('button:has-text("Metro")').first();
     await expect(metroChip).toBeVisible();
     await metroChip.click();
-    await expect(page.locator('text=Logged ⚡ Metro')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=Logged ⚡ Metro').or(page.locator('button:has-text("⚡ Metro ✓")')).first()).toBeVisible({ timeout: 5000 });
   });
 
-  test('35.3: WhatsApp Chatbox Assistant In-App Modal (Feature 5)', async ({ page, authHelpers }, testInfo) => {
+  test('35.3: WhatsApp Chatbox Assistant In-App Modal (Feature 5)', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRaj();
     await dismissGreetingIfNeeded(page);
 
@@ -121,32 +121,25 @@ test.describe('Area 35: Automation Suite (SMS/UPI Parser, Speed Chips, Recurring
     // Verify WhatsApp modal is open
     const modal = page.locator('[data-testid="whatsapp-chatbox-modal"]');
     await expect(modal).toBeVisible();
-    await expect(modal.locator('h3:has-text("PocketNook Chat")')).toBeVisible();
+    await expect(modal.locator('h3:has-text("PocketNook Chat")').first()).toBeVisible();
     await expect(modal.locator('text=ready • smart expense logger')).toBeVisible();
 
     // Type a natural language expense in chat
-    const expensePrompt = testInfo.project.name.includes('mobile') ? 'Tea 120 upi' : 'Coffee 120 upi';
     const chatInput = page.locator('[data-testid="whatsapp-chat-input"]');
-    await chatInput.fill(expensePrompt);
+    await chatInput.fill('Coffee 120 upi');
     await page.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
     // Verify user bubble appears
-    await expect(modal.locator(`text=${expensePrompt}`).first()).toBeVisible();
-
-    // If running back-to-back within 2-min duplicate window, confirm Log Anyway
-    const dupBtn = modal.locator('button:has-text("Log Anyway")').first();
-    if (await dupBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
-      await dupBtn.click();
-    }
+    await expect(modal.locator('text=Coffee 120 upi')).toBeVisible();
 
     // Verify bot response bubble confirms expense
     await expect(modal.locator('text=Expense Logged Successfully').first()).toBeVisible({ timeout: 6000 });
     await expect(modal.locator('text=₹120').first()).toBeVisible();
 
-    // Test quick prompt: "Summary"
-    const summaryPrompt = page.locator('[data-testid="whatsapp-quick-prompt-summary"]').first();
+    // Test quick prompt: "📊 Summary"
+    const summaryPrompt = page.locator('[data-testid="whatsapp-quick-prompt-summary"]');
     await summaryPrompt.click();
-    await expect(modal.locator('text=Monthly Budget Summary').first()).toBeVisible({ timeout: 6000 });
+    await expect(modal.locator('text=Monthly Budget Summary')).toBeVisible({ timeout: 6000 });
 
     // Close modal
     await modal.locator('button[aria-label="Back"], button[title="Close"]').first().click();

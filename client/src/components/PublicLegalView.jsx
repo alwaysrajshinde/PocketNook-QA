@@ -156,7 +156,7 @@ export default function PublicLegalView({ initialTab = 'privacy', onBack }) {
                 >
                   Google API Services User Data Policy
                   <ExternalLink size={11} className="inline ml-0.5" />
-                </a>, including the Limited Use requirements. We do not use Google user data to train generalized AI/ML models.
+                </a>, including the Limited Use requirements for Google Sign-In profile scopes. Optional online AI chat uses the Gemini API free tier via an isolated proxy where Google may use submitted prompts to improve its products under Gemini free-tier terms; sensitive account/card/phone numbers are masked beforehand and Summary Sharing is OFF by default.
               </div>
             </section>
 

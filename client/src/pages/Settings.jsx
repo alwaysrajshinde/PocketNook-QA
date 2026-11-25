@@ -1091,7 +1091,7 @@ export default function Settings({
                         Use AI with my data
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                        Default OFF. When enabled, PocketNook masks sensitive numbers and sends only an aggregated spending summary to answer chat questions.
+                        Default OFF. When enabled, PocketNook masks sensitive numbers and sends only an aggregated spending summary to answer chat questions. Note: our free-tier AI provider (Google AI Studio) may use prompts to improve its products under free-tier terms.
                       </p>
                     </div>
                   </div>
@@ -1890,7 +1890,7 @@ export default function Settings({
                       Use AI with my data
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Sensitive numbers masked; AI sees only a spending summary when ON (default OFF)
+                      Masked summary shared only when ON (default OFF); free-tier AI prompts may improve provider products
                     </div>
                   </div>
                 </div>

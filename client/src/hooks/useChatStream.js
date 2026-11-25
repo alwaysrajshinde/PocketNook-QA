@@ -17,19 +17,38 @@ async function resolveBearerToken(userId) {
   if (isFirebaseConfigured && auth?.currentUser) {
     return auth.currentUser.getIdToken();
   }
-  // In local Express dev or Playwright CI where Firebase SDK is disabled, pass test-harness token
-  if (typeof window !== 'undefined' && (window.navigator?.webdriver || window.location.hostname === 'localhost')) {
+  // Test token sent ONLY under automated browser runner (navigator.webdriver) or explicit test flag
+  const allowDevTestToken = typeof window !== 'undefined' &&
+    (Boolean(window.navigator?.webdriver) || import.meta.env?.VITE_ALLOW_TEST_AUTH === 'true');
+  if (allowDevTestToken) {
     return `TEST_UID:${userId || 'dev_user'}`;
   }
   return null;
 }
 
+const QUOTA_OR_DISABLED_CODES = new Set([
+  'AI_DISABLED',
+  'GLOBAL_QUOTA_EXHAUSTED',
+  'USER_DAILY_QUOTA_EXHAUSTED',
+  'RATE_LIMIT_EXCEEDED',
+  'PROVIDER_RATE_LIMIT'
+]);
+
 function toFriendlyError(code, status) {
-  if (code === 'STREAM_TIMEOUT' || code === 'CLIENT_TIMEOUT') {
-    return 'The assistant took too long to respond (20s timeout). Switched to local guidance—tap Retry to try again.';
+  if (code === 'AI_DISABLED') {
+    return 'Online AI is temporarily paused. Using local assistant mode.';
+  }
+  if (code === 'GLOBAL_QUOTA_EXHAUSTED') {
+    return 'Daily free-tier AI quota is exhausted for today. Switched to local assistant mode.';
+  }
+  if (code === 'USER_DAILY_QUOTA_EXHAUSTED') {
+    return 'You have reached today’s 10-message online AI limit. Switched to local assistant mode.';
   }
   if (status === 429 || code === 'RATE_LIMIT_EXCEEDED' || code === 'PROVIDER_RATE_LIMIT') {
-    return 'Too many requests right now. Please wait a few seconds before trying again.';
+    return 'Free-tier AI quota is busy right now. Using local assistant mode.';
+  }
+  if (code === 'STREAM_TIMEOUT' || code === 'CLIENT_TIMEOUT') {
+    return 'The assistant took too long to respond (20s timeout). Switched to local guidance—tap Retry to try again.';
   }
   if (status === 401 || code === 'AUTH_MISSING_TOKEN' || code === 'AUTH_TOKEN_EXPIRED') {
     return 'Your session needs to be refreshed. Please sign in again to use online AI chat.';
@@ -118,6 +137,7 @@ export function useChatStream() {
           ok: false,
           code,
           status: res.status,
+          isQuotaOrDisabled: res.status === 429 || QUOTA_OR_DISABLED_CODES.has(code),
           friendlyError: toFriendlyError(code, res.status)
         };
       }
@@ -199,6 +219,7 @@ export function useChatStream() {
         return {
           ok: false,
           code: streamError.code,
+          isQuotaOrDisabled: QUOTA_OR_DISABLED_CODES.has(streamError.code),
           friendlyError: streamError.message
         };
       }

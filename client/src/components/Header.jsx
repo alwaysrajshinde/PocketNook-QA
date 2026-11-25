@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { IS_QA } from '../utils/appBrand';
 
 export default function Header({
   userName = "User",
@@ -109,8 +110,16 @@ export default function Header({
           )}
         </div>
 
-        {/* Right Controls: Theme Toggle & Avatar with indicator dot */}
+        {/* Right Controls: QA Pill (in QA), Theme Toggle & Avatar with indicator dot */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {IS_QA && (
+            <span
+              data-testid="qa-env-badge"
+              className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-[10px] font-black tracking-wider uppercase"
+            >
+              QA
+            </span>
+          )}
           {/* Theme Switcher Toggle */}
           <button
             onClick={toggleTheme}

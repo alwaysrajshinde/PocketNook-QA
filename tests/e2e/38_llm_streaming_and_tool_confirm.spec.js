@@ -2,7 +2,7 @@
 const { test, expect } = require('../fixtures/auth.fixture');
 const { cleanTestUsers } = require('../helpers/dbHelper');
 
-test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Consent & Offline Fallback', () => {
+test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Consent & Quota Fallback', () => {
   test.afterAll(() => {
     cleanTestUsers();
   });
@@ -36,10 +36,11 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     return modal;
   }
 
-  test('38.1: Privacy consent toggle defaults OFF and toggles cleanly inside Chat & Settings', async ({ page, authHelpers }) => {
+  test('38.1: Privacy consent toggle defaults OFF, shows honest free-tier notice, and toggles cleanly', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRajMailTemp();
     const modal = await openChat(page);
 
+    await expect(modal.locator('text=free-tier AI prompts may be used by Google').first()).toBeVisible();
     const consentPill = modal.locator('[data-testid="chat-ai-consent-pill"]');
     await expect(consentPill).toBeVisible();
     await expect(consentPill).toContainText('Summary Sharing: OFF');
@@ -56,7 +57,6 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
   test('38.2: Progressive SSE streaming render, XSS DOMPurify neutralization, and Stop generating button', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRajMailTemp();
 
-    // Deterministic mocked SSE stream with delayed chunks so Stop button can be clicked mid-stream
     await page.route('**/api/chat', async (route) => {
       const sseBody = [
         'event: token\ndata: {"text":"Here is your spending tip: <img src=x onerror=\\"window.__llm_xss=1\\"> check your "}\n\n',
@@ -77,16 +77,13 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     await input.fill('Give me an analytical reflection on habits');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
-    // Stop button appears while stream is active
     const stopBtn = modal.locator('[data-testid="stop-generating-btn"]');
     await expect(stopBtn).toBeVisible({ timeout: 4000 });
 
-    // Let first request complete to verify DOMPurify strips XSS from streamed LLM response
     await expect(modal.locator('text=Here is your spending tip:').first()).toBeVisible({ timeout: 10000 });
     const xssEval = await page.evaluate(() => window['__llm_xss']);
     expect(xssEval).toBeUndefined();
 
-    // Now test clicking Stop generating mid-flight
     await input.fill('Analyze my long term habits in detail please');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
     await expect(stopBtn).toBeVisible({ timeout: 4000 });
@@ -96,7 +93,7 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     await modal.locator('button[aria-label="Back"]').click();
   });
 
-  test('38.3: Validated tool-call Confirm / Edit / Cancel flow and double-tap idempotency', async ({ page, authHelpers }) => {
+  test('38.3: AI-proposed expenses ALWAYS require Confirm tap (even < ₹500) + Edit/Cancel idempotency', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRajMailTemp();
     const modal = await openChat(page);
     const input = modal.locator('[data-testid="whatsapp-chat-input"]');
@@ -109,30 +106,28 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     await expect(confirmCard).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('text=Update your monthly budget to ₹28,000?').first()).toBeVisible();
 
-    // Cancel first -> nothing written
     await confirmCard.locator('[data-testid="tool-cancel-btn"]').click();
     await expect(modal.locator('text=Cancelled — no changes written').first()).toBeVisible();
 
-    // 2. High-value tool call ("I paid 650 on Swiggy for biryani") -> requires Confirm & Edit
-    await input.fill('I ordered biryani via Swiggy 650');
+    // 2. Low-value AI-proposed expense (< ₹500, high confidence 0.96) STILL requires explicit Confirm card (no auto-log)
+    await input.fill('I ordered coffee on Swiggy 120');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
-    const logConfirmCard = modal.locator('[data-testid="tool-confirm-card"]').last();
-    await expect(logConfirmCard).toBeVisible({ timeout: 10000 });
+    const lowConfirmCard = modal.locator('[data-testid="tool-confirm-card"]').last();
+    await expect(lowConfirmCard).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('text=Expense Logged Successfully!')).toHaveCount(0);
 
-    // Tap Edit -> change category -> save
-    await logConfirmCard.locator('[data-testid="tool-edit-btn"]').click();
+    // Edit & Confirm saves once and removes confirm card
+    await lowConfirmCard.locator('[data-testid="tool-edit-btn"]').click();
     await modal.locator('[data-testid="inline-edit-category"]').selectOption('Shopping');
     await modal.locator('[data-testid="inline-edit-save-btn"]').click();
     await expect(modal.locator('text=Expense Logged Successfully!').first()).toBeVisible({ timeout: 10000 });
-
-    // Confirm card should no longer remain clickable for double logging
     await expect(modal.locator('[data-testid="tool-confirm-card"]')).toHaveCount(0);
 
     await modal.locator('button[aria-label="Back"]').click();
   });
 
-  test('38.4: Graceful offline / provider error fallback to local engine with Retry button', async ({ page, authHelpers }) => {
+  test('38.4: Graceful provider 500 error fallback to local engine with Retry button', async ({ page, authHelpers }) => {
     await authHelpers.loginAsRajMailTemp();
 
     await page.route('**/api/chat', async (route) => {
@@ -147,9 +142,37 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
     await modal.locator('[data-testid="whatsapp-chat-input"]').fill('Tell me why groceries cost more lately');
     await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
 
-    // Friendly local fallback + Retry Online AI button, zero raw error trace
     await expect(modal.locator('text=Using local assistant mode').first()).toBeVisible({ timeout: 10000 });
     await expect(modal.locator('button:has-text("Retry Online AI")').first()).toBeVisible();
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
+
+  test('38.5: Quota exhausted (429) falls back to local engine with zero retry loop', async ({ page, authHelpers }) => {
+    await authHelpers.loginAsRajMailTemp();
+
+    let callCount = 0;
+    await page.route('**/api/chat', async (route) => {
+      callCount += 1;
+      await route.fulfill({
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          code: 'GLOBAL_QUOTA_EXHAUSTED',
+          error: 'Daily free-tier AI capacity reached.'
+        })
+      });
+    });
+
+    const modal = await openChat(page);
+    await modal.locator('[data-testid="whatsapp-chat-input"]').fill('How should I trim monthly subscriptions?');
+    await modal.locator('[data-testid="whatsapp-chat-send-btn"]').click();
+
+    await expect(modal.locator('text=Daily free-tier AI quota is exhausted for today').first()).toBeVisible({ timeout: 10000 });
+    await expect(modal.locator('button:has-text("Retry Online AI")')).toHaveCount(0);
+    // Ensure exactly 1 request was made (no retry loop)
+    expect(callCount).toBe(1);
 
     await modal.locator('button[aria-label="Back"]').click();
   });

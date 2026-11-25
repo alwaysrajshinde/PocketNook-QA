@@ -1,9 +1,9 @@
-const { ALLOWED_CATEGORIES, ALLOWED_PAYMENT_MODES } = require('./toolSchemas');
+import { ALLOWED_CATEGORIES, ALLOWED_PAYMENT_MODES } from './toolSchemas.js';
 
 /**
  * Server-side system prompt — NEVER exposed to client bundles or modifiable by user input.
  */
-const SYSTEM_INSTRUCTION = [
+export const SYSTEM_INSTRUCTION = [
   'You are PocketNook Assistant, a concise, friendly personal money helper for Indian users.',
   'You understand English, Hindi, and Hinglish. Always format Indian Rupee amounts with Indian grouping (e.g., ₹1,00,000).',
   'STRICT GROUNDING RULES:',
@@ -15,20 +15,14 @@ const SYSTEM_INSTRUCTION = [
   '6. Keep replies under 120 words unless the user explicitly asks for a detailed breakdown.'
 ].join('\n');
 
-/**
- * Wraps user-supplied text safely inside <user_message> delimiters, escaping nested tags.
- */
-function wrapUserData(rawText = '') {
+export function wrapUserData(rawText = '') {
   const safeEscaped = String(rawText || '')
     .replace(/<\s*\/?\s*user_message\s*>/gi, '[user_message]')
     .trim();
   return `<user_message>\n${safeEscaped}\n</user_message>`;
 }
 
-/**
- * Builds the structured prompt payload for LLM adapters without ever mixing user input into system role.
- */
-function buildPromptEnvelope({ message, history = [], olderSummary = null, context = null }) {
+export function buildPromptEnvelope({ message, history = [], olderSummary = null, context = null }) {
   const systemParts = [SYSTEM_INSTRUCTION];
 
   if (olderSummary) {
@@ -36,9 +30,7 @@ function buildPromptEnvelope({ message, history = [], olderSummary = null, conte
   }
 
   if (context) {
-    systemParts.push(
-      `USER FINANCIAL SNAPSHOT (masked JSON, INR):\n${JSON.stringify(context)}`
-    );
+    systemParts.push(`USER FINANCIAL SNAPSHOT (masked JSON, INR):\n${JSON.stringify(context)}`);
   } else {
     systemParts.push(
       'USER FINANCIAL SNAPSHOT: Not shared ("Use AI with my data" consent is OFF). Do not assume user budget or balances.'
@@ -61,7 +53,7 @@ function buildPromptEnvelope({ message, history = [], olderSummary = null, conte
     toolDeclarations: [
       {
         name: 'log_expense',
-        description: 'Propose logging a single expense or refund/income entry for user confirmation.',
+        description: 'Propose logging a single expense or refund/income entry for explicit user confirmation.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -78,7 +70,7 @@ function buildPromptEnvelope({ message, history = [], olderSummary = null, conte
       },
       {
         name: 'log_multiple_expenses',
-        description: 'Propose logging up to 10 expenses from one message.',
+        description: 'Propose logging up to 10 expenses from one message for explicit confirmation.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -104,7 +96,7 @@ function buildPromptEnvelope({ message, history = [], olderSummary = null, conte
       },
       {
         name: 'undo_last',
-        description: 'Propose undoing the last logged expense item or batch.',
+        description: 'Propose undoing the last logged expense item or batch for explicit confirmation.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -152,9 +144,3 @@ function buildPromptEnvelope({ message, history = [], olderSummary = null, conte
     ]
   };
 }
-
-module.exports = {
-  SYSTEM_INSTRUCTION,
-  wrapUserData,
-  buildPromptEnvelope
-};

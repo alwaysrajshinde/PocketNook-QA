@@ -42,7 +42,18 @@ module.exports = defineConfig({
   webServer: {
     command: 'node server/index.js',
     url: 'http://localhost:3001/api/categories',
-    reuseExistingServer: true,
-    timeout: 15000
+    reuseExistingServer: false,
+    timeout: 20000,
+    env: {
+      NODE_ENV: 'test',
+      ALLOW_TEST_AUTH: 'true',
+      AI_ENABLED: 'true',
+      LLM_PROVIDER: 'mock',
+      LLM_MODEL: 'mock-fixture-v1',
+      USER_PER_MIN_LIMIT: '50',
+      USER_DAILY_LIMIT: '100',
+      GLOBAL_DAILY_CAP: '500',
+      LOG_HMAC_SECRET: 'playwright-ci-test-salt-value'
+    }
   }
 });

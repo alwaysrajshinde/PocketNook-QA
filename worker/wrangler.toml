@@ -1,0 +1,30 @@
+name = "pocketnook-ai-chat"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# Free-tier Workers config (no Blaze/credit card required).
+# Set required secrets before deploying:
+#   npx wrangler secret put LLM_API_KEY
+#   npx wrangler secret put LOG_HMAC_SECRET
+[vars]
+ENVIRONMENT = "production"
+AI_ENABLED = "true"
+FIREBASE_PROJECT_ID = "expense-tracker-d98cd"
+LLM_PROVIDER = "gemini"
+# Keep model configurable via env; never hardcode model names in code.
+LLM_MODEL = "gemini-2.5-flash-lite"
+LLM_MAX_OUTPUT_TOKENS = "450"
+USER_PER_MIN_LIMIT = "5"
+USER_DAILY_LIMIT = "10"
+# Verify your live Gemini AI Studio free-tier RPD at https://aistudio.google.com/rate-limit
+# and keep GLOBAL_DAILY_CAP safely below it so free-tier quota is respected.
+GLOBAL_DAILY_CAP = "150"
+CORS_ALLOWED_ORIGINS = "https://alwaysrajshinde.github.io,http://localhost:5173"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "ChatRateLimiterDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRateLimiterDO"]

@@ -341,10 +341,29 @@ export default function WhatsAppChatboxModal({
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isAnimating, setIsAnimating] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const speechRecognitionRef = useRef(null);
+
+  // Smooth entrance & exit animation state coordinator
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      const raf = requestAnimationFrame(() => {
+        setIsAnimating(true);
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setIsAnimating(false);
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     try {
@@ -477,7 +496,7 @@ export default function WhatsAppChatboxModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const handleSendMessage = async (textToSend) => {
     const raw = (textToSend || inputText || '').trim();
@@ -574,8 +593,15 @@ export default function WhatsAppChatboxModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center bg-slate-950/70 dark:bg-black/80 backdrop-blur-xl animate-fade-in"
+      className={`fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center bg-slate-950/70 dark:bg-black/75 backdrop-blur-md transition-opacity duration-250 ease-out ${
+        isAnimating ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      }`}
       data-testid="whatsapp-chatbox-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       {/* Hidden receipt file picker (disabled for now) */}
       <input
@@ -587,12 +613,23 @@ export default function WhatsAppChatboxModal({
         className="hidden"
       />
 
-      {/* Signature PocketNook Mobile Container */}
-      <div className="relative w-full sm:max-w-lg h-[100dvh] sm:h-[88vh] sm:max-h-[760px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[32px] sm:rounded-[36px] overflow-hidden shadow-2xl flex flex-col border-t sm:border border-slate-200/80 dark:border-white/10 transition-all">
+      {/* Signature PocketNook Mobile Bottom Sheet Drawer (Reduced height so page behind is visible) */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full sm:max-w-lg h-[82dvh] sm:h-[80vh] sm:max-h-[720px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[32px] sm:rounded-[36px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-200/80 dark:border-white/10 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isAnimating
+            ? 'translate-y-0 sm:scale-100'
+            : 'translate-y-full sm:translate-y-8 sm:scale-95'
+        }`}
+      >
 
         {/* Mobile Pull Handle Indicator */}
-        <div className="sm:hidden flex items-center justify-center pt-2.5 pb-1 bg-white dark:bg-[#16132A]">
-          <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-white/20" />
+        <div
+          onClick={onClose}
+          className="sm:hidden flex items-center justify-center pt-3 pb-1.5 bg-white dark:bg-[#16132A] cursor-pointer active:opacity-60 transition-opacity"
+          title="Tap to dismiss"
+        >
+          <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-white/25 hover:bg-slate-400 dark:hover:bg-white/40 transition-colors" />
         </div>
 
         {/* ========================================================

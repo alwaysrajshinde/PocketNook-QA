@@ -176,4 +176,41 @@ test.describe('Area 38: Streaming LLM SSE, Stop Button, Tool Confirm Cards, Cons
 
     await modal.locator('button[aria-label="Back"]').click();
   });
+
+  test('38.6: Mobile drawer height, no keyboard autofocus on open, and natural conversational chat', async ({ page, authHelpers }) => {
+    await authHelpers.loginAsRajMailTemp();
+    const modal = await openChat(page);
+
+    // 1. Input must NOT autofocus on modal open (prevents mobile keyboard popping up unexpectedly)
+    const isInputFocusedOnOpen = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el?.getAttribute?.('data-testid') === 'whatsapp-chat-input';
+    });
+    expect(isInputFocusedOnOpen).toBe(false);
+
+    // 2. Comfortable tall mobile height (>= 88% viewport on mobile widths)
+    const vp = page.viewportSize();
+    if (vp && vp.width < 640) {
+      const cardBox = await modal.locator('> div').first().boundingBox();
+      expect(cardBox && cardBox.height).toBeGreaterThanOrEqual(vp.height * 0.88);
+    }
+
+    // 3. Normal conversational chat (small talk, health check, static 404 fallback without scary error banner)
+    const input = modal.locator('[data-testid="whatsapp-chat-input"]');
+    const sendBtn = modal.locator('[data-testid="whatsapp-chat-send-btn"]');
+
+    await input.fill('how are you?');
+    await sendBtn.click();
+    await expect(modal.locator('text=doing great').first()).toBeVisible({ timeout: 10000 });
+
+    await input.fill('how am i doing?');
+    await sendBtn.click();
+    await expect(modal.locator('text=Today\'s spend so far:').first()).toBeVisible({ timeout: 10000 });
+
+    await input.fill('thanks');
+    await sendBtn.click();
+    await expect(modal.locator('text=You\'re welcome!').first()).toBeVisible({ timeout: 10000 });
+
+    await modal.locator('button[aria-label="Back"]').click();
+  });
 });

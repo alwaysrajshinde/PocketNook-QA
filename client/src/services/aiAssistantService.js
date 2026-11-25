@@ -185,9 +185,17 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     }
   }
 
-  // 1. GREETING & ASSISTANT IDENTITY
+  // 1. GREETING, SMALL TALK & ASSISTANT IDENTITY
+  if (isSmallTalkOrFeedbackIntent(lower)) {
+    return wrapResult(handleSmallTalkOrFeedback(lower, snapshot, formatCurrency));
+  }
   if (isGreetingOrIdentity(lower)) {
     return wrapResult(handleGreetingResponse(snapshot, formatCurrency));
+  }
+
+  // 1b. NATURAL BUDGET HEALTH & TOP/LATEST EXPENSE INSIGHT
+  if (isSpendingInsightIntent(lower)) {
+    return wrapResult(handleSpendingInsight(lower, snapshot, formatCurrency));
   }
 
   // 2. UNDO / DELETE LAST EXPENSE
@@ -304,6 +312,11 @@ export async function processAssistantMessage(rawInput = '', context = {}) {
     return wrapResult(handleSmartFinancialAdvisory(text, snapshot, formatCurrency));
   }
 
+  // 21b. NATURAL CONVERSATIONAL FALLBACK (when user asks a genuine sentence, not random gibberish)
+  if (isNaturalConversationSentence(lower)) {
+    return wrapResult(handleConversationalFallback(text, snapshot, formatCurrency));
+  }
+
   // 22. FALLBACK GUIDANCE ROADMAP
   return wrapResult(handleFallbackResponse(text, snapshot, formatCurrency));
 }
@@ -336,7 +349,9 @@ export function canHandleLocally(rawInput = '', context = {}) {
 
   if (/^apply\s+(\d{2})\/(\d{2})\/(\d{2})/i.test(lower)) return true;
   if (
+    isSmallTalkOrFeedbackIntent(lower) ||
     isGreetingOrIdentity(lower) ||
+    isSpendingInsightIntent(lower) ||
     isUndoIntent(lower) ||
     isTodaysTotalIntent(lower) ||
     isBillSplitIntent(lower) ||
@@ -381,6 +396,22 @@ export function canHandleLocally(rawInput = '', context = {}) {
 
 function isGreetingOrIdentity(lower) {
   return /^(?:hi|hello|hey|namaste|hola|good\s*(?:morning|afternoon|evening)|who\s*are\s*you|what\s*can\s*you\s*do|help|bhai)\b/i.test(lower);
+}
+
+function isSmallTalkOrFeedbackIntent(lower) {
+  return /\b(?:how\s+are\s+you|how\s+r\s+u|kaise\s+ho|kya\s+haal|kya\s+hal|what'?s\s+up|whats\s+up|sup|thanks|thank\s+you|thx|shukriya|dhanyawad|got\s+it|thik\s+hai|theek\s+hai|sahi\s+hai|badhiya|good\s+night|see\s+you|bye)\b/i.test(lower) ||
+    /^(?:ok|okay|okey|cool|nice|great|awesome|yes|yeah|yep|no|nope|hmm|acha|achha)[!.]*$/i.test(lower.trim());
+}
+
+function isSpendingInsightIntent(lower) {
+  return /\b(?:how\s+am\s+i\s+doing|am\s+i\s+doing\s+(?:good|well|okay|fine)|budget\s+kaisa|mera\s+(?:budget|kharcha)|biggest\s+expense|highest\s+(?:expense|spend)|most\s+expensive|sabse\s+bada\s+kharcha|top\s+expense|latest\s+expense|last\s+expense|how\s+many\s+(?:expenses|transactions)|average\s+spend)\b/i.test(lower);
+}
+
+function isNaturalConversationSentence(lower) {
+  const words = lower.trim().split(/\s+/).filter(Boolean);
+  const alphaWords = words.filter((w) => /[a-z]{2,}/i.test(w) && /[aeiouy]/i.test(w));
+  if (alphaWords.length >= 2) return true;
+  return /\b(?:how|why|what|when|where|who|can|could|should|would|tell|suggest|explain|kya|kaise|kitna|kyu|batao)\b/i.test(lower);
 }
 
 function isUndoIntent(lower) {
@@ -463,6 +494,93 @@ function isGeneralFinancialQuestion(lower) {
 /* ========================================================
    CONVERSATIONAL & FINANCIAL ENGINE HANDLERS
    ======================================================== */
+
+function handleSmallTalkOrFeedback(lower, snapshot, formatCurrency) {
+  let replyText = '';
+  if (/\b(?:how\s+are\s+you|how\s+r\s+u|kaise\s+ho|kya\s+haal|kya\s+hal|what'?s\s+up|whats\s+up|sup)\b/i.test(lower)) {
+    replyText =
+      `I'm doing great, thanks for asking! Always ready to help with your finances.\n\n` +
+      `Right now your safe pool stands at *${formatCurrency(snapshot.remainingBudget)}* (*${formatCurrency(snapshot.safeDailyPace)}/day* for ${snapshot.daysRemaining} ${snapshot.daysRemaining === 1 ? 'day' : 'days'}). Want to log an expense or check today's spend?`;
+  } else if (/\b(?:bye|good\s+night|see\s+you)\b/i.test(lower)) {
+    replyText = `Take care! Today's spend stands at *${formatCurrency(snapshot.todaySpent)}* with *${formatCurrency(snapshot.remainingBudget)}* remaining. Catch you later!`;
+  } else if (/\b(?:thanks|thank\s+you|thx|shukriya|dhanyawad)\b/i.test(lower)) {
+    replyText = `You're welcome! Happy to help anytime. Let me know if you'd like to log an expense or check your budget.`;
+  } else {
+    replyText = `Got it! Everything looks set—you have *${formatCurrency(snapshot.remainingBudget)}* remaining this month (*${formatCurrency(snapshot.safeDailyPace)}/day*). Just message me whenever you want to log a spend or ask a question.`;
+  }
+
+  return {
+    replyText,
+    type: 'small_talk',
+    suggestedChips: ['Summary', 'Daily Pace', "Today's Total", 'Chai 20']
+  };
+}
+
+function handleSpendingInsight(lower, snapshot, formatCurrency) {
+  const txs = snapshot.safeTransactions || [];
+  if (/\b(?:biggest|highest|most\s+expensive|sabse\s+bada|top\s+expense)\b/i.test(lower)) {
+    if (txs.length === 0) {
+      return {
+        replyText: `You haven't logged any expenses this month yet, so there's no top expense yet.`,
+        type: 'spending_insight',
+        suggestedChips: ['Chai 20', 'Summary']
+      };
+    }
+    const biggest = txs.reduce((max, t) => (t.amount > (max?.amount || 0) ? t : max), txs[0]);
+    const avg = Math.round(txs.reduce((s, t) => s + Number(t.amount || 0), 0) / txs.length);
+    return {
+      replyText:
+        `Your biggest single spend this month was *${formatCurrency(biggest.amount)}* on *${biggest.merchant}* (${biggest.category} • ${biggest.date}).\n\n` +
+        `Across ${txs.length} transactions, your average spend is *${formatCurrency(avg)}*, with *${snapshot.topCategory?.category || 'General'}* leading overall.`,
+      type: 'spending_insight',
+      suggestedChips: ['Food Spend', 'Recent expenses', 'Summary']
+    };
+  }
+
+  if (/\b(?:latest\s+expense|last\s+expense|how\s+many\s+(?:expenses|transactions)|average\s+spend)\b/i.test(lower)) {
+    if (txs.length === 0) {
+      return {
+        replyText: `No expenses recorded yet this cycle. Try sending \`Chai 20\` to log your first entry!`,
+        type: 'spending_insight'
+      };
+    }
+    const latest = txs[0];
+    const avg = Math.round(txs.reduce((s, t) => s + Number(t.amount || 0), 0) / txs.length);
+    return {
+      replyText:
+        `You've logged *${txs.length} transactions* averaging *${formatCurrency(avg)}* each.\n\n` +
+        `Your latest entry was *${formatCurrency(latest.amount)}* at *${latest.merchant}* (${latest.category}).`,
+      type: 'spending_insight',
+      suggestedChips: ['Undo Last', 'Summary', 'Daily Pace']
+    };
+  }
+
+  const healthLine = snapshot.remainingBudget < 0
+    ? `You're currently *${formatCurrency(Math.abs(snapshot.remainingBudget))} over budget*, so keeping discretionary spends minimal for the next ${snapshot.daysRemaining} days will help.`
+    : snapshot.percentSpent >= 80
+    ? `You've used *${snapshot.percentSpent}%* of your budget with *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*). Staying mindful on *${snapshot.topCategory?.category || 'top categories'}* will finish the month smoothly.`
+    : `You're in solid shape! Only *${snapshot.percentSpent}%* of your budget is used—you still have *${formatCurrency(snapshot.remainingBudget)}* left (*${formatCurrency(snapshot.safeDailyPace)}/day*).`;
+
+  return {
+    replyText: `${healthLine}\n\nToday's spend so far: *${formatCurrency(snapshot.todaySpent)}*.`,
+    type: 'spending_insight',
+    suggestedChips: ['Summary', 'Food Spend', 'Daily Pace']
+  };
+}
+
+function handleConversationalFallback(text, snapshot, formatCurrency) {
+  const topCat = snapshot.topCategory?.category;
+  const topNote = topCat ? ` Your top category right now is *${topCat}* (${snapshot.topCategory.percent}%).` : '';
+  const replyText =
+    `Here's where things stand for you right now: you've spent *${formatCurrency(snapshot.totalSpent)}* so far this month, with *${formatCurrency(snapshot.remainingBudget)}* remaining (*${formatCurrency(snapshot.safeDailyPace)}/day* over ${snapshot.daysRemaining} ${snapshot.daysRemaining === 1 ? 'day' : 'days'}).${topNote}\n\n` +
+    `If you meant to log something (like \`Lunch 150\`), check affordability (\`Can I afford 2000?\`), split a bill (\`Split 1200 between 4\`), or ask a money question, just type it naturally!`;
+
+  return {
+    replyText,
+    type: 'conversational_reply',
+    suggestedChips: ['Summary', 'Daily Pace', 'Food Spend', '50/30/20 Rule']
+  };
+}
 
 function handleGreetingResponse(snapshot, formatCurrency) {
   const replyText =

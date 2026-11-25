@@ -612,7 +612,6 @@ export default function WhatsAppChatboxModal({
     if (isOpen) {
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        inputRef.current?.focus();
       }, 100);
     }
   }, [isOpen, messages, isTyping]);
@@ -1030,16 +1029,21 @@ export default function WhatsAppChatboxModal({
       }
 
       if (!streamRes.ok) {
-        // Offline / timeout / quota exhausted / AI_DISABLED / 5xx -> friendly local engine fallback (no retry loop)
-        await runLocalFallback(`_${streamRes.friendlyError}_`);
-        if (!streamRes.isQuotaOrDisabled) {
-          setMessages((prev) =>
-            prev.map((m, idx) =>
-              idx === prev.length - 1
-                ? { ...m, actionButtons: [...(m.actionButtons || []), { label: 'Retry Online AI', query: raw }] }
-                : m
-            )
-          );
+        if (streamRes.isStaticFallback) {
+          // Static host without remote Worker URL configured: answer seamlessly with local conversational engine
+          await runLocalFallback('');
+        } else {
+          // Offline / timeout / quota exhausted / AI_DISABLED / 5xx -> friendly local engine fallback (no retry loop)
+          await runLocalFallback(`_${streamRes.friendlyError}_`);
+          if (!streamRes.isQuotaOrDisabled) {
+            setMessages((prev) =>
+              prev.map((m, idx) =>
+                idx === prev.length - 1
+                  ? { ...m, actionButtons: [...(m.actionButtons || []), { label: 'Retry Online AI', query: raw }] }
+                  : m
+              )
+            );
+          }
         }
       }
     } catch (err) {
@@ -1266,8 +1270,9 @@ export default function WhatsAppChatboxModal({
 
   if (!shouldRender) return null;
 
-  const mobileDynamicStyle = viewportHeight
-    ? { maxHeight: `${Math.max(340, viewportHeight - 12)}px` }
+  const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 640;
+  const mobileDynamicStyle = isMobileViewport && viewportHeight
+    ? { height: `${Math.max(380, viewportHeight - 8)}px`, maxHeight: `${Math.max(380, viewportHeight - 8)}px` }
     : undefined;
 
   return (
@@ -1287,7 +1292,7 @@ export default function WhatsAppChatboxModal({
         ref={modalCardRef}
         onClick={(e) => e.stopPropagation()}
         style={mobileDynamicStyle}
-        className={`relative w-full sm:max-w-lg h-[82dvh] sm:h-[80vh] sm:max-h-[720px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[32px] sm:rounded-[36px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+        className={`relative w-full sm:max-w-lg h-[94dvh] sm:h-[82vh] sm:max-h-[740px] bg-[#f4f5fa] dark:bg-[#0d0b18] text-slate-900 dark:text-[#f8fafc] rounded-t-[24px] sm:rounded-[36px] overflow-hidden shadow-[0_-16px_50px_rgba(0,0,0,0.4)] dark:shadow-[0_-20px_60px_rgba(0,0,0,0.8)] flex flex-col border-t sm:border border-slate-300/80 dark:border-violet-400/20 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
           isAnimating ? 'translate-y-0 sm:scale-100' : 'translate-y-full sm:translate-y-8 sm:scale-95'
         }`}
       >
@@ -1653,7 +1658,7 @@ export default function WhatsAppChatboxModal({
               }}
               data-testid="whatsapp-chat-input"
               placeholder={isListening ? 'Listening... speak now!' : 'Ask anything or log expense...'}
-              className="flex-1 min-h-[42px] bg-transparent text-[13.5px] font-medium text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none"
+              className="flex-1 min-h-[42px] bg-transparent text-[16px] sm:text-[13.5px] font-medium text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none"
             />
 
             {/* Voice Language Toggle (EN-IN / HI-IN) */}

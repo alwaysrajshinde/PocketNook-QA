@@ -123,7 +123,7 @@ export default function AuthGate({ children }) {
         clean = clean.replace(/^(?:expense-tracker|pocketnook(?:-[a-z0-9_-]+)?)(?:\/|$)/i, '');
         clean = clean.replace(/^-qa(?:\/|$)/i, '');
         clean = clean.replace(/^\/+/, '').replace(/\/+$/, '');
-        
+
         if (!clean || clean === 'home' || clean === 'overview' || clean === 'pocketnook' || clean === 'pocketnook-qa' || clean === '-qa' || clean === 'expense-tracker') {
           if (window.location.hash !== '#/overview') {
             window.location.hash = '#/overview';

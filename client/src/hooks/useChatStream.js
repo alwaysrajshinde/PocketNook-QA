@@ -100,6 +100,21 @@ export function useChatStream() {
     }, CLIENT_TIMEOUT_MS);
 
     try {
+      const endpoint = getChatEndpoint();
+      const isStaticHostWithoutWorker =
+        endpoint === DEFAULT_CHAT_ENDPOINT &&
+        typeof window !== 'undefined' &&
+        /\.github\.io$/i.test(window.location?.hostname || '');
+
+      if (isStaticHostWithoutWorker) {
+        return {
+          ok: false,
+          code: 'NO_REMOTE_BACKEND',
+          isStaticFallback: true,
+          friendlyError: ''
+        };
+      }
+
       const token = await resolveBearerToken(userId);
       if (!token) {
         return {
@@ -109,7 +124,6 @@ export function useChatStream() {
         };
       }
 
-      const endpoint = getChatEndpoint();
       const headers = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
@@ -128,6 +142,16 @@ export function useChatStream() {
         }),
         signal: controller.signal
       });
+
+      if (res.status === 404 || res.status === 405) {
+        return {
+          ok: false,
+          code: 'NO_REMOTE_BACKEND',
+          status: res.status,
+          isStaticFallback: true,
+          friendlyError: ''
+        };
+      }
 
       if (!res.ok) {
         let errJson = {};
@@ -249,9 +273,16 @@ export function useChatStream() {
 
   const clearServerSession = useCallback(async (userId) => {
     try {
+      const endpoint = getChatEndpoint();
+      const isStaticHostWithoutWorker =
+        endpoint === DEFAULT_CHAT_ENDPOINT &&
+        typeof window !== 'undefined' &&
+        /\.github\.io$/i.test(window.location?.hostname || '');
+
+      if (isStaticHostWithoutWorker) return;
+
       const token = await resolveBearerToken(userId);
       if (!token) return;
-      const endpoint = getChatEndpoint();
       const sessionEndpoint = endpoint.endsWith('/chat')
         ? `${endpoint}/session`
         : `${endpoint.replace(/\/+$/, '')}/session`;
